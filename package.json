@@ -25,13 +25,13 @@
     "expo-notifications": "~55.0.20",
     "expo-router": "~55.0.13",
     "expo-secure-store": "~55.0.13",
-    "expo-task-manager": "~55.0.15",
     "expo-web-browser": "~55.0.14",
     "react": "19.2.0",
     "react-native": "0.83.6",
     "react-native-android-notification-listener": "^5.0.1",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
+    "react-native-svg": "15.15.3",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

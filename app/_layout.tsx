@@ -4,8 +4,6 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import RNAndroidNotificationListener from 'react-native-android-notification-listener';
 import { queryClient } from '../src/utils/queryClient';
-// 백그라운드 태스크 등록 (import만으로 defineTask 실행됨)
-import '../src/background/notificationTask';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({

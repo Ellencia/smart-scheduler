@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Smart Scheduler",
+    "slug": "smart-scheduler",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "smart-scheduler",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "com.smartscheduler.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "92a97fc6-d844-469b-bf82-5299b39d82db"
+      }
+    }
+  }
+}

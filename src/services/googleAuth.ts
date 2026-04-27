@@ -15,6 +15,7 @@ export function useGoogleAuth() {
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: GOOGLE_CLIENT_ID,
+      responseType: AuthSession.ResponseType.Token,
       scopes: [
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/calendar.events',

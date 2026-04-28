@@ -25,6 +25,7 @@ module.exports = function withNotificationListener(config) {
           'android:label': '@string/app_name',
           'android:exported': 'false',
           'android:permission': 'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE',
+          'tools:replace': 'android:exported',
         },
         'intent-filter': [
           {

@@ -1,45 +1,39 @@
-import * as AuthSession from 'expo-auth-session';
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 import * as SecureStore from 'expo-secure-store';
-import * as WebBrowser from 'expo-web-browser';
 
-WebBrowser.maybeCompleteAuthSession();
-
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID!;
+const WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!;
 const TOKEN_KEY = 'google_access_token';
-const REFRESH_TOKEN_KEY = 'google_refresh_token';
 
-export function useGoogleAuth() {
-  // hook은 반드시 컴포넌트/커스텀훅 내부에서 호출
-  const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
+// 앱 시작 시 한 번만 호출
+GoogleSignin.configure({
+  webClientId: WEB_CLIENT_ID,           // ID 토큰 발급용 — Web 클라이언트 ID
+  scopes: [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/calendar.events',
+  ],
+  offlineAccess: false,
+});
 
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      responseType: AuthSession.ResponseType.Token,
-      scopes: [
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/calendar.events',
-      ],
-      redirectUri: AuthSession.makeRedirectUri({ scheme: 'smart-scheduler' }),
-    },
-    discovery
-  );
+export async function signInWithGoogle(): Promise<string> {
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  await GoogleSignin.signIn();
 
-  return { request, response, promptAsync };
+  // Calendar API 호출용 access token 획득
+  const { accessToken } = await GoogleSignin.getTokens();
+  await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
+  return accessToken;
+}
+
+export async function signOutFromGoogle(): Promise<void> {
+  await GoogleSignin.signOut();
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
 export async function getStoredToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY);
 }
 
-export async function storeTokens(accessToken: string, refreshToken?: string) {
-  await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
-  if (refreshToken) {
-    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
-  }
-}
-
-export async function clearTokens() {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
-  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-}
+export { statusCodes };

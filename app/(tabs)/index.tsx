@@ -3,9 +3,8 @@ import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { NotificationCard } from '../../src/components/notifications/NotificationCard';
 
 export default function HomeScreen() {
-  const pendingSchedules = usePendingScheduleStore((s) =>
-    s.pendingSchedules.filter((x) => x.status === 'pending')
-  );
+  const allSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
+  const pendingSchedules = allSchedules.filter((x) => x.status === 'pending');
 
   return (
     <View style={styles.container}>

@@ -1,7 +1,7 @@
 import type { ExtractedEvent } from '../types/notification';
 
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
 
 const EXTRACTION_PROMPT = (text: string, today: string) => `
 오늘 날짜: ${today}
@@ -21,32 +21,53 @@ const EXTRACTION_PROMPT = (text: string, today: string) => `
 }
 `;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function extractScheduleFromText(
   text: string,
-  apiKey: string
+  apiKey: string,
+  maxRetries = 3
 ): Promise<ExtractedEvent | null> {
   const today = new Date().toISOString().split('T')[0];
 
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: EXTRACTION_PROMPT(text, today) }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-      },
-    }),
-  });
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: EXTRACTION_PROMPT(text, today) }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`);
+    // 429 = Rate limit → 지수 백오프 후 재시도
+    if (response.status === 429) {
+      const body = await response.text();
+      console.log(`[Gemini] 429 detail:`, body);
+      if (attempt === maxRetries - 1) {
+        throw new Error(`Gemini API rate limit (429): ${body}`);
+      }
+      const waitMs = 2000 * Math.pow(2, attempt);
+      console.log(`[Gemini] retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Gemini API error: ${response.status} ${body}`);
+    }
+
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawText || rawText.trim() === 'null') return null;
+
+    return JSON.parse(rawText) as ExtractedEvent;
   }
 
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!rawText || rawText.trim() === 'null') return null;
-
-  return JSON.parse(rawText) as ExtractedEvent;
+  return null;
 }

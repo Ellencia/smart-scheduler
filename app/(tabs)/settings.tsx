@@ -1,19 +1,21 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useGoogleAuth, storeTokens, clearTokens } from '../../src/services/googleAuth';
-import { useEffect } from 'react';
 import RNAndroidNotificationListener from 'react-native-android-notification-listener';
+import { signInWithGoogle, signOutFromGoogle } from '../../src/services/googleAuth';
 
 export default function SettingsScreen() {
-  const { request, response, promptAsync } = useGoogleAuth();
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { access_token } = response.params;
-      storeTokens(access_token).then(() => {
-        Alert.alert('연동 완료', 'Google Calendar가 연동되었습니다.');
-      });
+  const handleLogin = async () => {
+    try {
+      await signInWithGoogle();
+      Alert.alert('연동 완료', 'Google Calendar가 연동되었습니다.');
+    } catch (e: any) {
+      Alert.alert('로그인 실패', e?.message ?? String(e));
     }
-  }, [response]);
+  };
+
+  const handleLogout = async () => {
+    await signOutFromGoogle();
+    Alert.alert('완료', '로그아웃되었습니다.');
+  };
 
   return (
     <View style={styles.container}>
@@ -27,18 +29,11 @@ export default function SettingsScreen() {
       </TouchableOpacity>
 
       <Text style={styles.section}>Google Calendar</Text>
-      <TouchableOpacity
-        style={styles.row}
-        onPress={() => promptAsync()}
-        disabled={!request}
-      >
+      <TouchableOpacity style={styles.row} onPress={handleLogin}>
         <Text style={styles.rowText}>Google 계정 연동</Text>
         <Text style={styles.arrow}>›</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.row}
-        onPress={() => clearTokens().then(() => Alert.alert('완료', '로그아웃되었습니다.'))}
-      >
+      <TouchableOpacity style={styles.row} onPress={handleLogout}>
         <Text style={[styles.rowText, { color: '#e53935' }]}>로그아웃</Text>
         <Text style={styles.arrow}>›</Text>
       </TouchableOpacity>

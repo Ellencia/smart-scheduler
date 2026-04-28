@@ -5,7 +5,8 @@ import { usePendingScheduleStore } from '../stores/pendingScheduleStore';
 import type { Schedule } from '../types/schedule';
 
 export function useCalendarSync() {
-  const { confirm, markSynced } = usePendingScheduleStore();
+  const confirm = usePendingScheduleStore((s) => s.confirm);
+  const markSynced = usePendingScheduleStore((s) => s.markSynced);
 
   return useMutation({
     mutationFn: async (schedule: Schedule) => {

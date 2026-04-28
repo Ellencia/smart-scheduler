@@ -7,7 +7,8 @@ import { useCalendarSync } from '../../src/hooks/useCalendarSync';
 export default function ScheduleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { pendingSchedules, update } = usePendingScheduleStore();
+  const pendingSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
+  const update = usePendingScheduleStore((s) => s.update);
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
 
   const schedule = pendingSchedules.find((s) => s.id === id);

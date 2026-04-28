@@ -17,7 +17,7 @@ const APP_NAMES: Record<string, string> = {
 export function NotificationCard({ schedule }: Props) {
   const router = useRouter();
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
-  const { reject } = usePendingScheduleStore();
+  const reject = usePendingScheduleStore((s) => s.reject);
 
   const appName = APP_NAMES[schedule.sourceApp] ?? schedule.sourceApp;
 

@@ -3,9 +3,8 @@ import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { NotificationCard } from '../../src/components/notifications/NotificationCard';
 
 export default function ScheduleScreen() {
-  const schedules = usePendingScheduleStore((s) =>
-    s.pendingSchedules.filter((x) => x.status === 'confirmed' || x.status === 'synced')
-  );
+  const allSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
+  const schedules = allSchedules.filter((x) => x.status === 'confirmed' || x.status === 'synced');
 
   return (
     <View style={styles.container}>

@@ -23,7 +23,9 @@
       "expo-router",
       "expo-secure-store",
       "expo-notifications",
-      "./plugins/withNotificationListener"
+      "./plugins/withNotificationListener",
+      "expo-font",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true

@@ -13,14 +13,15 @@ module.exports = function withNotificationListener(config) {
 
     // 중복 방지
     if (!application.service) application.service = [];
+    const SERVICE_NAME = 'com.lesimoes.androidnotificationlistener.RNAndroidNotificationListener';
     const alreadyAdded = application.service.some(
-      (s) => s.$['android:name'] === 'com.supersami.notificationlistener.NotificationService'
+      (s) => s.$['android:name'] === SERVICE_NAME
     );
 
     if (!alreadyAdded) {
       application.service.push({
         $: {
-          'android:name': 'com.supersami.notificationlistener.NotificationService',
+          'android:name': SERVICE_NAME,
           'android:label': '@string/app_name',
           'android:exported': 'false',
           'android:permission': 'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE',

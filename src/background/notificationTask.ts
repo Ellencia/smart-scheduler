@@ -35,6 +35,20 @@ function hasScheduleKeyword(text: string): boolean {
   return SCHEDULE_KEYWORDS.some((kw) => text.includes(kw));
 }
 
+// 같은 출처/내용의 알림이 최근 N분 내에 이미 처리됐는지 확인
+const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
+function isDuplicate(sourceApp: string, sourceText: string): boolean {
+  const all = usePendingScheduleStore.getState().pendingSchedules;
+  const cutoff = Date.now() - DEDUP_WINDOW_MS;
+  return all.some(
+    (s) =>
+      s.sourceApp === sourceApp &&
+      s.sourceText === sourceText &&
+      new Date(s.createdAt).getTime() > cutoff
+  );
+}
+
 // react-native-android-notification-listener는 페이로드를
 // { notification: "JSON 문자열" } 형태로 전달함
 interface HeadlessPayload {
@@ -70,6 +84,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
       return;
     }
 
+    // 중복 알림 차단 — 같은 메시지가 갱신/재전송돼도 한 번만 처리
+    if (isDuplicate(notification.app, notification.text)) {
+      console.log('[NotificationTask] skipped — duplicate within 10 min');
+      return;
+    }
+
     console.log('[NotificationTask] analyzing with Gemini...');
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY!;
     const extracted = await extractScheduleFromText(notification.text, apiKey);
@@ -97,7 +117,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
         body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
         data: { pendingId },
       },
-      trigger: null,
+      trigger: { channelId: 'schedule-detected' } as any,
     });
   } catch (err) {
     console.error('[NotificationTask] failed:', err);

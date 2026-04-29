@@ -1,8 +1,72 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
-import { useCalendarSync } from '../../src/hooks/useCalendarSync';
+import { useCalendarSync, CalendarCancelled } from '../../src/hooks/useCalendarSync';
+import type { ConflictEvent } from '../../src/services/googleCalendar';
+import { COLORS, RADIUS } from '../../src/theme/colors';
+import { getAppMeta } from '../../src/utils/sourceApps';
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function askConflict(conflicts: ConflictEvent[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const list = conflicts
+      .map((c) => `• ${c.summary} (${fmtTime(c.start)}-${fmtTime(c.end)})`)
+      .join('\n');
+    Alert.alert(
+      '시간 겹침 알림',
+      `해당 시간에 이미 ${conflicts.length}개의 일정이 있습니다:\n\n${list}\n\n그래도 등록하시겠습니까?`,
+      [
+        { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+        { text: '등록', style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) }
+    );
+  });
+}
+
+function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={COLORS.faint}
+        selectionColor={COLORS.accent}
+      />
+    </View>
+  );
+}
 
 export default function ScheduleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -20,92 +84,239 @@ export default function ScheduleDetailScreen() {
 
   if (!schedule) {
     return (
-      <View style={styles.center}>
-        <Text>일정을 찾을 수 없습니다.</Text>
+      <View style={styles.backdrop}>
+        <View style={[styles.sheet, styles.center]}>
+          <Text style={{ color: COLORS.text }}>일정을 찾을 수 없습니다.</Text>
+        </View>
       </View>
     );
   }
 
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('입력 확인', '제목을 입력해주세요.');
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      Alert.alert('입력 확인', '날짜 형식을 확인해주세요. (예: 2024-05-20)');
-      return;
-    }
-    if (!/^\d{2}:\d{2}$/.test(time)) {
-      Alert.alert('입력 확인', '시간 형식을 확인해주세요. (예: 19:00)');
-      return;
-    }
+  const validate = (): string | null => {
+    if (!title.trim()) return '제목을 입력해주세요.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '날짜 형식: YYYY-MM-DD';
+    if (!/^\d{2}:\d{2}$/.test(time)) return '시간 형식: HH:mm';
+    return null;
+  };
+
+  const handleSync = () => {
+    const err = validate();
+    if (err) return Alert.alert('입력 확인', err);
+
+    update(id, { title, date, time, location: location || undefined });
+    syncToCalendar(
+      {
+        schedule: { ...schedule, title, date, time, location: location || undefined },
+        onConflict: askConflict,
+      },
+      {
+        onSuccess: () => router.back(),
+        onError: (e) => {
+          if (e instanceof CalendarCancelled) return;
+          Alert.alert('등록 실패', e.message);
+        },
+      }
+    );
+  };
+
+  const handleSaveOnly = () => {
+    const err = validate();
+    if (err) return Alert.alert('입력 확인', err);
     update(id, { title, date, time, location: location || undefined });
     router.back();
   };
 
-  const handleSync = () => {
-    update(id, { title, date, time, location: location || undefined });
-    syncToCalendar({ ...schedule, title, date, time, location: location || undefined },
-      { onSuccess: () => router.back() }
-    );
-  };
+  const meta = getAppMeta(schedule.sourceApp);
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.original}>"{schedule.sourceText}"</Text>
+    <Pressable style={styles.backdrop} onPress={() => router.back()}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.kbWrap}
+        pointerEvents="box-none"
+      >
+        {/* 시트 본체 — 안쪽 탭은 닫히지 않게 */}
+        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          {/* 핸들 */}
+          <View style={styles.handle} />
 
-      <Text style={styles.label}>제목</Text>
-      <TextInput style={styles.input} value={title} onChangeText={setTitle} />
+          {/* 헤더 */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>일정 확인 및 수정</Text>
+            <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.muted} />
+            </TouchableOpacity>
+          </View>
 
-      <Text style={styles.label}>날짜 (YYYY-MM-DD)</Text>
-      <TextInput style={styles.input} value={date} onChangeText={setDate} placeholder="2024-05-20" />
+          {/* 원본 메시지 */}
+          <View style={styles.rawBox}>
+            <View style={[styles.sourceLetter, { backgroundColor: meta.bg }]}>
+              <Text style={[styles.sourceLetterText, { color: meta.fg }]}>{meta.letter}</Text>
+            </View>
+            <Text style={styles.rawText} numberOfLines={2}>
+              "{schedule.sourceText}"
+            </Text>
+          </View>
 
-      <Text style={styles.label}>시간 (HH:mm)</Text>
-      <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="19:00" />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <Field label="제목" value={title} onChangeText={setTitle} placeholder="일정 제목" />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Field
+                  label="날짜"
+                  value={date}
+                  onChangeText={setDate}
+                  placeholder="2026-04-30"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field
+                  label="시간"
+                  value={time}
+                  onChangeText={setTime}
+                  placeholder="19:00"
+                />
+              </View>
+            </View>
+            <Field
+              label="장소 (선택)"
+              value={location}
+              onChangeText={setLocation}
+              placeholder="장소"
+            />
+          </ScrollView>
 
-      <Text style={styles.label}>장소 (선택)</Text>
-      <TextInput style={styles.input} value={location} onChangeText={setLocation} placeholder="장소" />
-
-      <TouchableOpacity style={styles.btnPrimary} onPress={handleSync} disabled={isPending}>
-        <Text style={styles.btnPrimaryText}>{isPending ? '등록 중...' : 'Google Calendar에 등록'}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.btnSecondary} onPress={handleSave}>
-        <Text style={styles.btnSecondaryText}>수정만 저장</Text>
-      </TouchableOpacity>
-    </ScrollView>
+          {/* 액션 */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={styles.btnSecondary}
+              onPress={handleSaveOnly}
+              disabled={isPending}
+            >
+              <Text style={styles.btnSecondaryText}>수정만 저장</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btnPrimary, isPending && styles.btnDisabled]}
+              onPress={handleSync}
+              disabled={isPending}
+            >
+              {isPending ? (
+                <ActivityIndicator color={COLORS.accent} />
+              ) : (
+                <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  original: { fontSize: 13, color: '#888', fontStyle: 'italic', marginBottom: 20, lineHeight: 20 },
-  label: { fontSize: 12, color: '#666', marginBottom: 4, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  kbWrap: { justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.sheet,
+    borderTopRightRadius: RADIUS.sheet,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    maxHeight: '88%',
+  },
+  center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 14,
+  },
+
+  // 헤더
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  headerTitle: { fontSize: 16, fontWeight: '600', color: COLORS.text },
+
+  // 원본 메시지 박스
+  rawBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.md,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    marginBottom: 16,
+  },
+  sourceLetter: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceLetterText: { fontSize: 12, fontWeight: '800' },
+  rawText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.muted,
+    fontStyle: 'italic',
+    lineHeight: 19,
+  },
+
+  // 폼
+  scrollContent: { gap: 14, paddingBottom: 12 },
+  row: { flexDirection: 'row', gap: 12 },
+  field: { gap: 6 },
+  fieldLabel: { fontSize: 12, color: COLORS.muted, marginLeft: 2 },
+  input: {
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.md,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     fontSize: 15,
-    color: '#333',
+    color: COLORS.text,
   },
+
+  // 액션
+  actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   btnPrimary: {
-    backgroundColor: '#4285F4',
-    borderRadius: 10,
+    flex: 1.5,
     paddingVertical: 14,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.accentDim,
     alignItems: 'center',
-    marginTop: 24,
+    justifyContent: 'center',
   },
-  btnPrimaryText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  btnPrimaryText: { color: COLORS.accent, fontWeight: '600', fontSize: 15 },
   btnSecondary: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
+    flex: 1,
     paddingVertical: 14,
+    borderRadius: RADIUS.lg,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
   },
-  btnSecondaryText: { color: '#333', fontSize: 15 },
+  btnSecondaryText: { color: COLORS.text, fontSize: 15 },
+  btnDisabled: { opacity: 0.5 },
 });

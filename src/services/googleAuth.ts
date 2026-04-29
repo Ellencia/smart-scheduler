@@ -36,4 +36,24 @@ export async function getStoredToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY);
 }
 
+// 현재 로그인된 사용자 정보 (없으면 null)
+export async function getCurrentUserEmail(): Promise<string | null> {
+  try {
+    const user = GoogleSignin.getCurrentUser();
+    return user?.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// 토큰 강제 갱신 — 401 응답 받았을 때 호출
+export async function refreshAccessToken(): Promise<string> {
+  await GoogleSignin.clearCachedAccessToken(
+    (await SecureStore.getItemAsync(TOKEN_KEY)) ?? ''
+  );
+  const { accessToken } = await GoogleSignin.getTokens();
+  await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
+  return accessToken;
+}
+
 export { statusCodes };

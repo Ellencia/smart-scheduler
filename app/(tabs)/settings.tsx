@@ -1,67 +1,271 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  Switch,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import RNAndroidNotificationListener from 'react-native-android-notification-listener';
-import { signInWithGoogle, signOutFromGoogle } from '../../src/services/googleAuth';
+import { useRouter } from 'expo-router';
+import {
+  signInWithGoogle,
+  signOutFromGoogle,
+  getCurrentUserEmail,
+} from '../../src/services/googleAuth';
+import { useAppStore } from '../../src/stores/appStore';
+import { COLORS, RADIUS } from '../../src/theme/colors';
+
+function SectionLabel({ label }: { label: string }) {
+  return <Text style={styles.sectionLabel}>{label}</Text>;
+}
+
+function SourceRow({
+  iconBg,
+  iconText,
+  iconIsIon,
+  ionName,
+  title,
+  subtitle,
+  enabled,
+  onToggle,
+  disabled,
+}: {
+  iconBg: string;
+  iconText?: string;
+  iconIsIon?: boolean;
+  ionName?: string;
+  title: string;
+  subtitle: string;
+  enabled: boolean;
+  onToggle?: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+        {iconIsIon && ionName ? (
+          <Ionicons name={ionName as any} size={16} color={COLORS.muted} />
+        ) : (
+          <Text style={styles.iconText}>{iconText}</Text>
+        )}
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.cardSub}>{subtitle}</Text>
+      </View>
+      <Switch
+        value={enabled}
+        onValueChange={onToggle}
+        disabled={disabled}
+        trackColor={{ false: COLORS.border, true: COLORS.accent }}
+        thumbColor={COLORS.text}
+      />
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
+  const router = useRouter();
+  const resetOnboarding = useAppStore((s) => s.resetOnboarding);
+  const [email, setEmail] = useState<string | null>(null);
+  const [kakaoOn, setKakaoOn] = useState(true);
+  const [smsOn, setSmsOn] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setEmail(await getCurrentUserEmail());
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
   const handleLogin = async () => {
     try {
       await signInWithGoogle();
       Alert.alert('연동 완료', 'Google Calendar가 연동되었습니다.');
+      refresh();
     } catch (e: any) {
       Alert.alert('로그인 실패', e?.message ?? String(e));
     }
   };
 
-  const handleLogout = async () => {
-    await signOutFromGoogle();
-    Alert.alert('완료', '로그아웃되었습니다.');
+  const handleLogout = () => {
+    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '로그아웃',
+        style: 'destructive',
+        onPress: async () => {
+          await signOutFromGoogle();
+          refresh();
+        },
+      },
+    ]);
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.section}>알림 권한</Text>
-      <TouchableOpacity
-        style={styles.row}
-        onPress={() => RNAndroidNotificationListener.requestPermission()}
-      >
-        <Text style={styles.rowText}>알림 접근 권한 설정</Text>
-        <Text style={styles.arrow}>›</Text>
-      </TouchableOpacity>
+    <SafeAreaView edges={['top']} style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.pageTitle}>설정</Text>
 
-      <Text style={styles.section}>Google Calendar</Text>
-      <TouchableOpacity style={styles.row} onPress={handleLogin}>
-        <Text style={styles.rowText}>Google 계정 연동</Text>
-        <Text style={styles.arrow}>›</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.row} onPress={handleLogout}>
-        <Text style={[styles.rowText, { color: '#e53935' }]}>로그아웃</Text>
-        <Text style={styles.arrow}>›</Text>
-      </TouchableOpacity>
-    </View>
+        {/* 계정 */}
+        <SectionLabel label="계정" />
+        <TouchableOpacity
+          style={styles.card}
+          onPress={email ? handleLogout : handleLogin}
+          activeOpacity={0.7}
+        >
+          <View style={styles.avatarBox}>
+            <Text style={styles.avatarText}>
+              {email ? email[0].toUpperCase() : 'G'}
+            </Text>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>
+              {email ?? 'Google 계정 연동'}
+            </Text>
+            <Text style={styles.cardSub}>
+              {email ? 'Google 계정 연결됨' : '탭하여 연결하기'}
+            </Text>
+          </View>
+          {email ? (
+            <View style={styles.connectedBadge}>
+              <Text style={styles.connectedText}>연결됨</Text>
+            </View>
+          ) : (
+            <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+          )}
+        </TouchableOpacity>
+
+        {/* 알림 소스 */}
+        <SectionLabel label="알림 소스" />
+        <SourceRow
+          iconBg="#e8a400"
+          iconText="K"
+          title="카카오톡"
+          subtitle="채팅 알림 감지"
+          enabled={kakaoOn}
+          onToggle={setKakaoOn}
+        />
+        <SourceRow
+          iconBg={COLORS.accentDim}
+          iconText="S"
+          title="SMS"
+          subtitle="문자 메시지 감지"
+          enabled={smsOn}
+          onToggle={setSmsOn}
+        />
+        <SourceRow
+          iconBg={COLORS.surfaceAlt}
+          iconIsIon
+          ionName="card-outline"
+          title="이메일"
+          subtitle="Gmail 연동 (준비중)"
+          enabled={false}
+          disabled
+        />
+
+        {/* AI 모델 */}
+        <SectionLabel label="AI 모델" />
+        <View style={styles.card}>
+          <View style={styles.modelIconBox}>
+            <Ionicons name="add" size={18} color={COLORS.accent} />
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>Gemini 2.5 Flash</Text>
+            <Text style={styles.cardSub}>텍스트 분석 · 빠른 응답</Text>
+          </View>
+          <Text style={styles.activeText}>사용중</Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  section: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 24,
-    marginBottom: 4,
-    paddingHorizontal: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  safe: { flex: 1, backgroundColor: COLORS.bg },
+  content: { padding: 16, paddingBottom: 40 },
+
+  pageTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 24,
+    marginTop: 4,
   },
-  row: {
+
+  sectionLabel: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginBottom: 8,
+    marginTop: 24,
+    marginLeft: 2,
+  },
+
+  // 공통 카드 행
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
     paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+    marginBottom: 8,
+    gap: 12,
   },
-  rowText: { fontSize: 15, color: '#333' },
-  arrow: { fontSize: 20, color: '#ccc' },
+  cardBody: { flex: 1, gap: 3 },
+  cardTitle: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  cardSub: { fontSize: 12, color: COLORS.muted },
+
+  // 계정 아바타
+  avatarBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontSize: 17, fontWeight: '700', color: COLORS.accent },
+
+  // 연결됨 뱃지
+  connectedBadge: {
+    backgroundColor: '#0f2e1a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+  },
+  connectedText: { fontSize: 12, fontWeight: '600', color: COLORS.success },
+
+  // 소스 아이콘
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+
+  // AI 모델 아이콘
+  modelIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: COLORS.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeText: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
 });

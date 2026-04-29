@@ -385,3 +385,98 @@ const notification: RawNotification =
 | 12 | **Headless JS 디버깅은 Metro 로그가 핵심** — 앱이 닫혀 있어도 dev 서버에 연결되어 있으면 로그가 보임 |
 | 13 | **단계별 검증 사고법** — UI/백엔드/통신을 분리해서 검증하면 어디가 문제인지 빠르게 좁혀짐. 한 번에 다 작동하길 기대하지 말 것 |
 | 14 | **타사 AI 도구의 코드 제안은 시그니처 호환성을 따로 검토** — Gemini가 준 코드를 그대로 붙여넣으면 store/service 시그니처가 달라서 깨질 수 있음. 로직만 차용하고 우리 인터페이스에 맞게 어댑트 |
+
+---
+
+## 12. Gemini API Rate Limit 대응
+
+Stage 2 검증 중 발견. 알림이 많을수록 무료 티어 한도를 빠르게 소진.
+
+### 12-1. 모델 선택 — `gemini-2.0-flash` 무료 차단
+**증상**: API 호출 4회만에 모두 429 (Rate Limit) 응답
+**원인**: `gemini-2.0-flash`가 시점에 따라 무료 티어에서 제외되어 결제 계정 필수 모델로 분류됨
+**해결**: `gemini-2.5-flash-lite`로 변경. 무료 RPM/RPD가 더 후함
+```ts
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+```
+
+### 12-2. 사전 키워드 필터링 (호출량 90% 감소)
+일반 대화("ㅇㅇ", "뭐해" 등)는 일정이 아니므로 API를 부르지 않음. 시간/날짜/일정 관련 키워드 30개를 사전 검사.
+
+```ts
+const SCHEDULE_KEYWORDS = ['시', '분', '오전', '오후', '오늘', '내일', ...];
+function hasScheduleKeyword(text: string): boolean {
+  return SCHEDULE_KEYWORDS.some((kw) => text.includes(kw));
+}
+```
+
+### 12-3. 429 자동 재시도 (지수 백오프)
+일시적 RPM 초과 시 자동 복구. 2s → 4s → 8s 대기 후 재시도, 최대 3회.
+
+### 12-4. 에러 본문 로깅
+원인 정확히 파악하려면 `response.text()`로 본문을 찍어야 함. status code만 보면 진단 불가.
+
+---
+
+## 13. Google OAuth 정책 변경 대응 (Stage 4)
+
+Stage 4 검증 중 가장 큰 벽. Google이 2024~2025년에 OAuth 보안 정책을 대폭 강화한 결과 `expo-auth-session` 만으로는 해결 불가.
+
+### 13-1. Implicit Flow + PKCE 충돌
+**증상**: `code_challenge_method` 파라미터가 허용되지 않는다는 400 에러
+**원인**: `responseType: Token` (Implicit Flow)인데 `expo-auth-session`이 PKCE 파라미터를 자동 추가
+**해결 시도**: Authorization Code Flow로 변경 (`Google.useAuthRequest`로 전환)
+
+### 13-2. Custom URI Scheme 차단 (핵심 문제)
+**증상**: "Custom URI scheme is not enabled for your Android client" 400 에러
+**원인**: 2024년 이후 신규 생성한 Android OAuth 클라이언트는 Custom URI scheme(`com.smartscheduler.app:/oauthredirect`)이 기본 비활성화됨. Google이 보안상 deprecation
+**시도 1 (실패)**: Web 클라이언트로 전환 → "Custom scheme URIs are not allowed for 'WEB' client type"
+- Web 클라이언트는 처음부터 Custom URI 금지
+- expo-auth-session이 Android에선 어떤 클라이언트 ID를 줘도 package-name 기반 redirect URI를 사용 → 막다른 길
+
+### 13-3. **최종 해결 — Google Sign-In 네이티브 SDK 도입**
+`@react-native-google-signin/google-signin`으로 전환. Google이 직접 만든 라이브러리라 OAuth 정책 변경에 자동 대응.
+
+**적용 내역**:
+1. `npx expo install @react-native-google-signin/google-signin`
+2. `app.json` plugins에 `@react-native-google-signin/google-signin` 추가
+3. `googleAuth.ts` 전면 재작성:
+   - `useAuthRequest` Hook 제거 → `signInWithGoogle()` 함수 호출 방식
+   - `webClientId`로 configure (ID 토큰 검증용)
+   - `GoogleSignin.signIn()` → `GoogleSignin.getTokens()`로 access token 획득
+4. `settings.tsx` 단순화 — Hook 제거, async 함수 직접 호출
+
+**작동 원리**:
+- 네이티브 SDK가 Google Play Services를 통해 시스템 레벨에서 인증
+- Custom URI scheme 우회 — OAuth flow가 SDK 내부에서 처리됨
+- 최신 Google 정책에 자동 호환
+
+**전제 조건**:
+- 같은 프로젝트에 **Web 클라이언트 ID**와 **Android 클라이언트 ID**가 모두 존재
+- Android 클라이언트의 SHA1이 EAS keystore와 일치
+- 네이티브 모듈이라 **재빌드 필요** (30분 EAS 큐)
+
+---
+
+## 14. 검증 진행 상황 (최신)
+
+| Stage | 내용 | 상태 |
+|---|---|---|
+| 1 | 알림이 JS 태스크에 도달 | ✅ 통과 (10-3 페이로드 파싱 버그 해결 후) |
+| 2 | 타겟 앱 → Gemini 분석 | ✅ 통과 (12-1 모델 변경 후) |
+| 3 | Zustand 저장 + UI 카드 표시 | ✅ 통과 (스크린샷 확인) |
+| 3.5 | 푸시 알림 표시 | 진행 중 (`shouldShowBanner`로 수정 완료, 검증 대기) |
+| 4 | Google Calendar 등록 | 진행 중 (네이티브 SDK 재빌드 필요) |
+
+---
+
+## 15. 추가 학습 포인트
+
+| # | 교훈 |
+|---|---|
+| 15 | **Gemini 무료 모델은 시점에 따라 바뀜** — `2.0-flash`가 어느 시점부터 유료 전용으로 분류될 수 있음. 항상 dashboard에서 실제 무료 quota 확인 |
+| 16 | **API 호출 전에 사전 필터링** — LLM 호출은 비용/속도 제약이 큼. 명백히 무관한 입력은 클라이언트에서 차단해서 호출량 자체를 줄이는 게 더 효과적 |
+| 17 | **에러 코드만 보지 말고 본문도 봐라** — `response.text()` 또는 `response.json()`으로 상세 메시지를 출력해야 진단 가능 |
+| 18 | **Google OAuth는 `expo-auth-session`보다 네이티브 SDK가 안정적** — 정책 변경에 자동 대응. 특히 native build(EAS)에선 `@react-native-google-signin/google-signin` 권장 |
+| 19 | **Custom URI scheme은 deprecated 가는 추세** — 2024년 이후 Google/Apple 모두 보안 강화로 점진적 차단. 신규 프로젝트는 처음부터 네이티브 SDK 또는 Universal Links 고려 |
+| 20 | **OAuth 클라이언트 유형마다 redirect URI 정책이 다름** — Web 클라이언트는 https만, Android 클라이언트도 신규는 custom scheme 금지. 두 클라이언트를 조합해도 한쪽 제약을 우회할 순 없음 |

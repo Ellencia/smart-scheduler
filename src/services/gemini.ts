@@ -4,9 +4,10 @@ const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
 
 const EXTRACTION_PROMPT = (text: string, today: string) => `
-오늘 날짜: ${today}
+오늘 날짜: ${today} (한국 표준시 KST 기준)
 
 다음 메시지에서 일정 정보를 추출해서 JSON으로만 응답해. 일정이 없으면 null로만 응답해.
+날짜/시간은 KST 기준으로 해석해.
 
 메시지: "${text}"
 
@@ -28,7 +29,7 @@ export async function extractScheduleFromText(
   apiKey: string,
   maxRetries = 3
 ): Promise<ExtractedEvent | null> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }).replace(/\. /g, '-').replace('.', '');
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {

@@ -6,6 +6,7 @@ import {
 } from '../services/googleCalendar';
 import { getStoredToken } from '../services/googleAuth';
 import { usePendingScheduleStore } from '../stores/pendingScheduleStore';
+import { useAppStore } from '../stores/appStore';
 import type { Schedule } from '../types/schedule';
 
 interface SyncParams {
@@ -23,6 +24,7 @@ export class CalendarCancelled extends Error {
 export function useCalendarSync() {
   const confirm = usePendingScheduleStore((s) => s.confirm);
   const markSynced = usePendingScheduleStore((s) => s.markSynced);
+  const reminderMinutes = useAppStore((s) => s.reminderMinutes);
 
   return useMutation({
     mutationFn: async ({ schedule, onConflict }: SyncParams) => {
@@ -40,7 +42,7 @@ export function useCalendarSync() {
 
       // 3. 등록
       confirm(schedule.id);
-      const calendarEventId = await createCalendarEvent(schedule, token);
+      const calendarEventId = await createCalendarEvent(schedule, token, reminderMinutes);
       return { scheduleId: schedule.id, calendarEventId };
     },
     onSuccess: ({ scheduleId, calendarEventId }) => {

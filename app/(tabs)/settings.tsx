@@ -18,7 +18,7 @@ import {
   signOutFromGoogle,
   getCurrentUserEmail,
 } from '../../src/services/googleAuth';
-import { useAppStore } from '../../src/stores/appStore';
+import { useAppStore, REMINDER_OPTIONS, type ReminderMinutes } from '../../src/stores/appStore';
 import { COLORS, RADIUS } from '../../src/theme/colors';
 
 function SectionLabel({ label }: { label: string }) {
@@ -73,9 +73,15 @@ function SourceRow({
 export default function SettingsScreen() {
   const router = useRouter();
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
+  const reminderMinutes = useAppStore((s) => s.reminderMinutes);
+  const setReminderMinutes = useAppStore((s) => s.setReminderMinutes);
   const [email, setEmail] = useState<string | null>(null);
   const [kakaoOn, setKakaoOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
+  const [showReminderPicker, setShowReminderPicker] = useState(false);
+
+  const currentReminderLabel =
+    REMINDER_OPTIONS.find((o) => o.value === reminderMinutes)?.label ?? '10분 전';
 
   const refresh = useCallback(async () => {
     setEmail(await getCurrentUserEmail());
@@ -173,6 +179,56 @@ export default function SettingsScreen() {
           disabled
         />
 
+        {/* 캘린더 알림 */}
+        <SectionLabel label="캘린더 알림" />
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => setShowReminderPicker((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.modelIconBox}>
+            <Ionicons name="alarm-outline" size={18} color={COLORS.accent} />
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>일정 알림</Text>
+            <Text style={styles.cardSub}>등록된 일정 전 알림 시간</Text>
+          </View>
+          <View style={styles.reminderBadge}>
+            <Text style={styles.reminderBadgeText}>{currentReminderLabel}</Text>
+          </View>
+          <Ionicons
+            name={showReminderPicker ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={COLORS.faint}
+          />
+        </TouchableOpacity>
+
+        {showReminderPicker && (
+          <View style={styles.pickerBox}>
+            {REMINDER_OPTIONS.map((opt) => {
+              const selected = opt.value === reminderMinutes;
+              return (
+                <TouchableOpacity
+                  key={String(opt.value)}
+                  style={[styles.pickerRow, selected && styles.pickerRowSelected]}
+                  onPress={() => {
+                    setReminderMinutes(opt.value as ReminderMinutes);
+                    setShowReminderPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pickerText, selected && styles.pickerTextSelected]}>
+                    {opt.label}
+                  </Text>
+                  {selected && (
+                    <Ionicons name="checkmark" size={16} color={COLORS.accent} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         {/* AI 모델 */}
         <SectionLabel label="AI 모델" />
         <View style={styles.card}>
@@ -268,4 +324,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   activeText: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
+
+  // 알림 설정 뱃지
+  reminderBadge: {
+    backgroundColor: COLORS.accentDim,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+  },
+  reminderBadgeText: { fontSize: 12, fontWeight: '600', color: COLORS.accent },
+
+  // 드롭다운 피커
+  pickerBox: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+  },
+  pickerRowSelected: { backgroundColor: COLORS.accentDim },
+  pickerText: { fontSize: 15, color: COLORS.text },
+  pickerTextSelected: { color: COLORS.accent, fontWeight: '600' },
 });

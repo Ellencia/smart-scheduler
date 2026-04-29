@@ -35,10 +35,10 @@ function hasScheduleKeyword(text: string): boolean {
   return SCHEDULE_KEYWORDS.some((kw) => text.includes(kw));
 }
 
-// 같은 출처/내용의 알림이 최근 N분 내에 이미 처리됐는지 확인
+// 같은 출처/내용의 알림이 최근 N분 내에 이미 처리됐는지 확인 (Gemini 호출 전)
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;
 
-function isDuplicate(sourceApp: string, sourceText: string): boolean {
+function isDuplicateText(sourceApp: string, sourceText: string): boolean {
   const all = usePendingScheduleStore.getState().pendingSchedules;
   const cutoff = Date.now() - DEDUP_WINDOW_MS;
   return all.some(
@@ -46,6 +46,18 @@ function isDuplicate(sourceApp: string, sourceText: string): boolean {
       s.sourceApp === sourceApp &&
       s.sourceText === sourceText &&
       new Date(s.createdAt).getTime() > cutoff
+  );
+}
+
+// 추출된 제목+날짜+시간이 이미 스토어에 존재하는지 확인 (Gemini 호출 후)
+function isDuplicateSchedule(title: string, date: string, time: string): boolean {
+  const all = usePendingScheduleStore.getState().pendingSchedules;
+  return all.some(
+    (s) =>
+      s.title === title &&
+      s.date === date &&
+      s.time === time &&
+      s.status !== 'rejected'
   );
 }
 
@@ -84,9 +96,9 @@ export default async function notificationTask(payload: HeadlessPayload) {
       return;
     }
 
-    // 중복 알림 차단 — 같은 메시지가 갱신/재전송돼도 한 번만 처리
-    if (isDuplicate(notification.app, notification.text)) {
-      console.log('[NotificationTask] skipped — duplicate within 10 min');
+    // [1단계] 중복 알림 차단 — 같은 메시지가 갱신/재전송돼도 한 번만 처리
+    if (isDuplicateText(notification.app, notification.text)) {
+      console.log('[NotificationTask] skipped — duplicate text within 10 min');
       return;
     }
 
@@ -100,6 +112,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
     }
     if (extracted.confidence < 0.6) {
       console.log('[NotificationTask] confidence too low:', extracted.confidence);
+      return;
+    }
+
+    // [2단계] 같은 제목+날짜+시간 일정이 이미 존재하면 스킵
+    if (isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
+      console.log('[NotificationTask] skipped — schedule already exists:', extracted.title, extracted.date, extracted.time);
       return;
     }
 

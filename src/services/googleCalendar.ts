@@ -9,11 +9,14 @@ interface CalendarEvent {
   description?: string;
   start: { dateTime: string; timeZone: string };
   end: { dateTime: string; timeZone: string };
+  reminders?: {
+    useDefault: boolean;
+    overrides: { method: string; minutes: number }[];
+  };
 }
 
-function scheduleToCalendarEvent(schedule: Schedule): CalendarEvent {
+function scheduleToCalendarEvent(schedule: Schedule, reminderMinutes: number | null): CalendarEvent {
   const startDateTime = `${schedule.date}T${schedule.time}:00`;
-  // 기본 1시간 이벤트
   const endDate = new Date(`${startDateTime}+09:00`);
   endDate.setHours(endDate.getHours() + 1);
 
@@ -23,6 +26,9 @@ function scheduleToCalendarEvent(schedule: Schedule): CalendarEvent {
     description: schedule.description ?? `출처: ${schedule.sourceApp}`,
     start: { dateTime: startDateTime, timeZone: 'Asia/Seoul' },
     end: { dateTime: endDate.toISOString(), timeZone: 'Asia/Seoul' },
+    reminders: reminderMinutes !== null
+      ? { useDefault: false, overrides: [{ method: 'popup', minutes: reminderMinutes }] }
+      : { useDefault: false, overrides: [] },
   };
 }
 
@@ -93,9 +99,10 @@ async function postEvent(event: CalendarEvent, accessToken: string) {
 
 export async function createCalendarEvent(
   schedule: Schedule,
-  accessToken: string
+  accessToken: string,
+  reminderMinutes: number | null = 10
 ): Promise<string> {
-  const event = scheduleToCalendarEvent(schedule);
+  const event = scheduleToCalendarEvent(schedule, reminderMinutes);
   let response = await postEvent(event, accessToken);
 
   // 401 = 토큰 만료 → 갱신 후 1회 재시도

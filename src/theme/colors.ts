@@ -46,7 +46,7 @@ export const LIGHT_COLORS = {
   saturdayColor: '#0066cc',
 } as const;
 
-export type AppColors = typeof DARK_COLORS;
+export type AppColors = typeof DARK_COLORS | typeof LIGHT_COLORS;
 export type ThemeMode = 'dark' | 'light' | 'system';
 
 // 하위 호환 — 직접 import해서 쓰는 곳은 useColors() 훅으로 교체할 것

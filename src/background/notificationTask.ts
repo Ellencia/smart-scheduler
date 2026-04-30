@@ -2,10 +2,18 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractScheduleFromText } from '../services/gemini';
 import { usePendingScheduleStore } from '../stores/pendingScheduleStore';
+import { DEFAULT_SOURCE_SETTINGS, type SourceSettings } from '../stores/appStore';
 import type { Schedule } from '../types/schedule';
 
+const KAKAO_APP = 'com.kakao.talk';
+const SMS_APPS = new Set([
+  'com.android.mms',
+  'com.samsung.android.messaging',
+  'com.google.android.apps.messaging',
+]);
+
 const TARGET_APPS = new Set([
-  'com.kakao.talk',                    // 카카오톡
+  KAKAO_APP,                           // 카카오톡
   'com.android.mms',                   // 기본 문자
   'com.samsung.android.messaging',     // 삼성 문자
   'com.google.android.apps.messaging', // Google Messages
@@ -40,7 +48,29 @@ function hasScheduleKeyword(text: string): boolean {
 // HeadlessJS 컨텍스트에서는 Zustand store가 hydrate되지 않으므로
 // AsyncStorage를 직접 읽어야 실제 저장된 일정 목록에 접근할 수 있음
 const STORE_KEY = 'pending-schedules';
+const APP_STATE_KEY = 'app-state';
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+
+async function getSourceSettings(): Promise<SourceSettings> {
+  try {
+    const raw = await AsyncStorage.getItem(APP_STATE_KEY);
+    if (!raw) return DEFAULT_SOURCE_SETTINGS;
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_SOURCE_SETTINGS,
+      ...parsed?.state?.sourceSettings,
+    };
+  } catch {
+    return DEFAULT_SOURCE_SETTINGS;
+  }
+}
+
+async function isNotificationSourceEnabled(packageName: string): Promise<boolean> {
+  const settings = await getSourceSettings();
+  if (packageName === KAKAO_APP) return settings.kakao;
+  if (SMS_APPS.has(packageName)) return settings.sms;
+  return true;
+}
 
 async function getStoredSchedules(): Promise<Schedule[]> {
   try {
@@ -101,6 +131,10 @@ export default async function notificationTask(payload: HeadlessPayload) {
 
     if (!TARGET_APPS.has(notification.app)) {
       console.log('[NotificationTask] skipped — not target app');
+      return;
+    }
+    if (!(await isNotificationSourceEnabled(notification.app))) {
+      console.log('[NotificationTask] skipped — source disabled');
       return;
     }
     if (!notification.text || notification.text.length < 5) {

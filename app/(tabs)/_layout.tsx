@@ -22,7 +22,6 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: colors.bg },
         headerTitleStyle: { color: colors.text, fontWeight: '600' },
         headerTintColor: colors.text,
-        sceneContainerStyle: { backgroundColor: colors.bg },
       }}
     >
       <Tabs.Screen

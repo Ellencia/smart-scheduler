@@ -22,7 +22,7 @@ export function UndoSnackbar({ message, onUndo, onDismiss }: Props) {
       tension: 80,
       friction: 12,
     }).start();
-  }, []);
+  }, [translateY]);
 
   const handleUndo = () => {
     Animated.timing(translateY, {

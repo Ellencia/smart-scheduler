@@ -47,7 +47,7 @@ export function SuccessToast({ message, onDismiss }: Props) {
     }, 2000);
 
     return () => clearTimeout(fadeOut);
-  }, []);
+  }, [onDismiss, opacity, translateY]);
 
   return (
     <Animated.View style={[styles.container, { transform: [{ translateY }], opacity }]}>

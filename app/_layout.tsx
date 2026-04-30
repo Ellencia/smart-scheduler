@@ -37,7 +37,6 @@ export default function RootLayout() {
   const router = useRouter();
   const onboardingCompleted = useAppStore((s) => s.onboardingCompleted);
   const colors = useColors();
-  const theme = useAppStore((s) => s.theme);
   const isDark = colors === DARK_COLORS;
 
   useEffect(() => {

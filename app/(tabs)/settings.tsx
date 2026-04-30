@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import RNAndroidNotificationListener from 'react-native-android-notification-listener';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import {
@@ -101,10 +100,10 @@ export default function SettingsScreen() {
   const setReminderMinutes = useAppStore((s) => s.setReminderMinutes);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
+  const sourceSettings = useAppStore((s) => s.sourceSettings);
+  const setSourceEnabled = useAppStore((s) => s.setSourceEnabled);
   const addPending = usePendingScheduleStore((s) => s.addPending);
   const [email, setEmail] = useState<string | null>(null);
-  const [kakaoOn, setKakaoOn] = useState(true);
-  const [smsOn, setSmsOn] = useState(true);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [devTaps, setDevTaps] = useState(0);
   const [devUnlocked, setDevUnlocked] = useState(false);
@@ -248,16 +247,16 @@ export default function SettingsScreen() {
           iconText="K"
           title="카카오톡"
           subtitle="채팅 알림 감지"
-          enabled={kakaoOn}
-          onToggle={setKakaoOn}
+          enabled={sourceSettings.kakao}
+          onToggle={(enabled) => setSourceEnabled('kakao', enabled)}
         />
         <SourceRow
           iconBg={colors.accentDim}
           iconText="S"
           title="SMS"
           subtitle="문자 메시지 감지"
-          enabled={smsOn}
-          onToggle={setSmsOn}
+          enabled={sourceSettings.sms}
+          onToggle={(enabled) => setSourceEnabled('sms', enabled)}
         />
         <SourceRow
           iconBg={colors.surfaceAlt}

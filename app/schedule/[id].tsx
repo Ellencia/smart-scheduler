@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -214,12 +215,14 @@ export default function ScheduleDetailScreen() {
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>제목</Text>
               <View style={styles.inputWrap}>
-                <Text
-                  style={[styles.inputText, !title && { color: colors.faint }]}
-                  onPress={() => {}}
-                >
-                  {title || '일정 제목'}
-                </Text>
+                <TextInput
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="일정 제목"
+                  placeholderTextColor={colors.faint}
+                  style={styles.inputText}
+                  returnKeyType="next"
+                />
               </View>
             </View>
 
@@ -248,9 +251,14 @@ export default function ScheduleDetailScreen() {
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>장소 (선택)</Text>
               <View style={styles.inputWrap}>
-                <Text style={[styles.inputText, !location && { color: colors.faint }]}>
-                  {location || '장소'}
-                </Text>
+                <TextInput
+                  value={location}
+                  onChangeText={setLocation}
+                  placeholder="장소"
+                  placeholderTextColor={colors.faint}
+                  style={styles.inputText}
+                  returnKeyType="done"
+                />
               </View>
             </View>
           </ScrollView>
@@ -380,7 +388,7 @@ function makeStyles(c: AppColors) {
       borderWidth: 0.5, borderColor: c.border,
       paddingHorizontal: 12, paddingVertical: 13,
     },
-    inputText: { fontSize: 15, color: c.text },
+    inputText: { fontSize: 15, color: c.text, padding: 0 },
     // 피커 버튼 (날짜/시간)
     pickerBtn: {
       flexDirection: 'row',

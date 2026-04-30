@@ -13,15 +13,28 @@ export const REMINDER_OPTIONS = [
 ] as const;
 
 export type ReminderMinutes = 5 | 10 | 30 | 60 | 1440 | null;
+export type NotificationSource = 'kakao' | 'sms';
+
+export interface SourceSettings {
+  kakao: boolean;
+  sms: boolean;
+}
+
+export const DEFAULT_SOURCE_SETTINGS: SourceSettings = {
+  kakao: true,
+  sms: true,
+};
 
 interface AppState {
   onboardingCompleted: boolean;
   reminderMinutes: ReminderMinutes;
   theme: ThemeMode;
+  sourceSettings: SourceSettings;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   setReminderMinutes: (v: ReminderMinutes) => void;
   setTheme: (v: ThemeMode) => void;
+  setSourceEnabled: (source: NotificationSource, enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -30,10 +43,15 @@ export const useAppStore = create<AppState>()(
       onboardingCompleted: false,
       reminderMinutes: 10,
       theme: 'system',
+      sourceSettings: DEFAULT_SOURCE_SETTINGS,
       completeOnboarding: () => set({ onboardingCompleted: true }),
       resetOnboarding: () => set({ onboardingCompleted: false }),
       setReminderMinutes: (v) => set({ reminderMinutes: v }),
       setTheme: (v) => set({ theme: v }),
+      setSourceEnabled: (source, enabled) =>
+        set((state) => ({
+          sourceSettings: { ...state.sourceSettings, [source]: enabled },
+        })),
     }),
     {
       name: 'app-state',

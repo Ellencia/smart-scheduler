@@ -25,7 +25,6 @@ export class CalendarCancelled extends Error {
 let syncLock = false;
 
 export function useCalendarSync() {
-  const confirm = usePendingScheduleStore((s) => s.confirm);
   const markSynced = usePendingScheduleStore((s) => s.markSynced);
   const reminderMinutes = useAppStore((s) => s.reminderMinutes);
 
@@ -44,7 +43,6 @@ export function useCalendarSync() {
           if (!proceed) throw new CalendarCancelled();
         }
 
-        confirm(schedule.id);
         const calendarEventId = await createCalendarEvent(schedule, token, reminderMinutes);
         return { scheduleId: schedule.id, calendarEventId };
       } finally {

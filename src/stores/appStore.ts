@@ -30,11 +30,13 @@ interface AppState {
   reminderMinutes: ReminderMinutes;
   theme: ThemeMode;
   sourceSettings: SourceSettings;
+  autoSync: boolean;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   setReminderMinutes: (v: ReminderMinutes) => void;
   setTheme: (v: ThemeMode) => void;
   setSourceEnabled: (source: NotificationSource, enabled: boolean) => void;
+  setAutoSync: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -44,6 +46,7 @@ export const useAppStore = create<AppState>()(
       reminderMinutes: 10,
       theme: 'system',
       sourceSettings: DEFAULT_SOURCE_SETTINGS,
+      autoSync: false,
       completeOnboarding: () => set({ onboardingCompleted: true }),
       resetOnboarding: () => set({ onboardingCompleted: false }),
       setReminderMinutes: (v) => set({ reminderMinutes: v }),
@@ -52,6 +55,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           sourceSettings: { ...state.sourceSettings, [source]: enabled },
         })),
+      setAutoSync: (v) => set({ autoSync: v }),
     }),
     {
       name: 'app-state',

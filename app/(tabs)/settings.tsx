@@ -102,6 +102,8 @@ export default function SettingsScreen() {
   const setTheme = useAppStore((s) => s.setTheme);
   const sourceSettings = useAppStore((s) => s.sourceSettings);
   const setSourceEnabled = useAppStore((s) => s.setSourceEnabled);
+  const autoSync = useAppStore((s) => s.autoSync);
+  const setAutoSync = useAppStore((s) => s.setAutoSync);
   const addPending = usePendingScheduleStore((s) => s.addPending);
   const [email, setEmail] = useState<string | null>(null);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
@@ -266,6 +268,18 @@ export default function SettingsScreen() {
           subtitle="Gmail 연동 (준비중)"
           enabled={false}
           disabled
+        />
+
+        {/* 캘린더 자동등록 */}
+        <SectionLabel label="캘린더 자동등록" styles={styles} />
+        <SourceRow
+          iconBg={colors.accentDim}
+          iconIsIon
+          ionName="calendar-outline"
+          title="자동 등록"
+          subtitle="감지 즉시 확인 없이 캘린더에 바로 등록"
+          enabled={autoSync}
+          onToggle={setAutoSync}
         />
 
         {/* 캘린더 알림 */}

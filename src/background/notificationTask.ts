@@ -1,8 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractScheduleFromText } from '../services/gemini';
-import { usePendingScheduleStore } from '../stores/pendingScheduleStore';
-import { DEFAULT_SOURCE_SETTINGS, type SourceSettings } from '../stores/appStore';
+import { createCalendarEvent } from '../services/googleCalendar';
+import { getStoredToken } from '../services/googleAuth';
+import { DEFAULT_SOURCE_SETTINGS, type SourceSettings, type ReminderMinutes } from '../stores/appStore';
 import type { Schedule } from '../types/schedule';
 
 const KAKAO_APP = 'com.kakao.talk';
@@ -51,25 +52,40 @@ const STORE_KEY = 'pending-schedules';
 const APP_STATE_KEY = 'app-state';
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;
 
-async function getSourceSettings(): Promise<SourceSettings> {
+interface AppSettings {
+  sourceSettings: SourceSettings;
+  reminderMinutes: ReminderMinutes;
+  autoSync: boolean;
+}
+
+async function getAppSettings(): Promise<AppSettings> {
   try {
     const raw = await AsyncStorage.getItem(APP_STATE_KEY);
-    if (!raw) return DEFAULT_SOURCE_SETTINGS;
+    if (!raw) return { sourceSettings: DEFAULT_SOURCE_SETTINGS, reminderMinutes: 10, autoSync: false };
     const parsed = JSON.parse(raw);
     return {
-      ...DEFAULT_SOURCE_SETTINGS,
-      ...parsed?.state?.sourceSettings,
+      sourceSettings: { ...DEFAULT_SOURCE_SETTINGS, ...parsed?.state?.sourceSettings },
+      reminderMinutes: parsed?.state?.reminderMinutes ?? 10,
+      autoSync: parsed?.state?.autoSync ?? false,
     };
   } catch {
-    return DEFAULT_SOURCE_SETTINGS;
+    return { sourceSettings: DEFAULT_SOURCE_SETTINGS, reminderMinutes: 10, autoSync: false };
   }
 }
 
-async function isNotificationSourceEnabled(packageName: string): Promise<boolean> {
-  const settings = await getSourceSettings();
-  if (packageName === KAKAO_APP) return settings.kakao;
-  if (SMS_APPS.has(packageName)) return settings.sms;
+async function isNotificationSourceEnabled(packageName: string, settings: AppSettings): Promise<boolean> {
+  if (packageName === KAKAO_APP) return settings.sourceSettings.kakao;
+  if (SMS_APPS.has(packageName)) return settings.sourceSettings.sms;
   return true;
+}
+
+// HeadlessJS에서 Zustand store는 unhydrated — AsyncStorage에 직접 추가
+async function saveScheduleToStorage(schedule: Schedule): Promise<void> {
+  const raw = await AsyncStorage.getItem(STORE_KEY);
+  const parsed = raw ? JSON.parse(raw) : { state: { pendingSchedules: [] }, version: 0 };
+  const existing: Schedule[] = parsed?.state?.pendingSchedules ?? [];
+  parsed.state.pendingSchedules = [schedule, ...existing];
+  await AsyncStorage.setItem(STORE_KEY, JSON.stringify(parsed));
 }
 
 async function getStoredSchedules(): Promise<Schedule[]> {
@@ -133,7 +149,10 @@ export default async function notificationTask(payload: HeadlessPayload) {
       console.log('[NotificationTask] skipped — not target app');
       return;
     }
-    if (!(await isNotificationSourceEnabled(notification.app))) {
+
+    const appSettings = await getAppSettings();
+
+    if (!(await isNotificationSourceEnabled(notification.app, appSettings))) {
       console.log('[NotificationTask] skipped — source disabled');
       return;
     }
@@ -173,22 +192,58 @@ export default async function notificationTask(payload: HeadlessPayload) {
       return;
     }
 
-    console.log('[NotificationTask] saved:', extracted.title);
-    const { addPending } = usePendingScheduleStore.getState();
-    const pendingId = addPending({
-      ...extracted,
+    const scheduleId = `schedule_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const now = new Date();
+    const baseSchedule: Schedule = {
+      id: scheduleId,
+      title: extracted.title,
+      date: extracted.date,
+      time: extracted.time,
+      location: extracted.location ?? undefined,
+      description: extracted.description ?? undefined,
+      status: 'pending',
       sourceApp: notification.app,
       sourceText: notification.text,
-    });
+      createdAt: now,
+      updatedAt: now,
+    };
 
+    // 자동등록 ON: 캘린더에 바로 등록, 실패 시 pending으로 폴백
+    if (appSettings.autoSync) {
+      const token = await getStoredToken();
+      if (token) {
+        try {
+          const calendarEventId = await createCalendarEvent(baseSchedule, token, appSettings.reminderMinutes);
+          await saveScheduleToStorage({ ...baseSchedule, status: 'synced', calendarEventId, updatedAt: new Date() });
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `캘린더에 등록됨: ${extracted.title}`,
+              body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
+              data: {},
+            },
+            trigger: { channelId: 'schedule-detected' } as any,
+          });
+          console.log('[NotificationTask] auto-synced:', extracted.title);
+          return;
+        } catch (err) {
+          console.error('[NotificationTask] autoSync failed, falling back to pending:', err);
+        }
+      } else {
+        console.log('[NotificationTask] autoSync skipped — no token, falling back to pending');
+      }
+    }
+
+    // 수동 확인 경로 (기본값 또는 자동등록 실패 폴백)
+    await saveScheduleToStorage(baseSchedule);
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `일정 감지됨: ${extracted.title}`,
         body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
-        data: { pendingId },
+        data: { pendingId: scheduleId },
       },
       trigger: { channelId: 'schedule-detected' } as any,
     });
+    console.log('[NotificationTask] saved pending:', extracted.title);
   } catch (err) {
     console.error('[NotificationTask] failed:', err);
   }

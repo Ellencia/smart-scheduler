@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, PanResponder } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { UndoSnackbar } from '../../src/components/UndoSnackbar';
 import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
@@ -28,6 +28,12 @@ export default function CalendarScreen() {
   const reject = usePendingScheduleStore((s) => s.reject);
   const events = all.filter((s) => s.status === 'confirmed' || s.status === 'synced');
   const { entry, show, undo, dismiss } = useUndoSnackbar();
+
+  useFocusEffect(
+    useCallback(() => {
+      usePendingScheduleStore.persist.rehydrate();
+    }, [])
+  );
 
   const [year, setYear] = useState(TODAY.getFullYear());
   const [month, setMonth] = useState(TODAY.getMonth());

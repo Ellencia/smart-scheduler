@@ -51,6 +51,7 @@ function hasScheduleKeyword(text: string): boolean {
 const STORE_KEY = 'pending-schedules';
 const APP_STATE_KEY = 'app-state';
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+const IN_FLIGHT_NOTIFICATIONS = new Set<string>();
 
 interface AppSettings {
   sourceSettings: SourceSettings;
@@ -112,6 +113,10 @@ function normalizeForDuplicate(value: string): string {
   return value.toLowerCase().replace(/\s+/g, '').replace(/[^\p{L}\p{N}]/gu, '');
 }
 
+function getInFlightKey(sourceApp: string, sourceText: string): string {
+  return `${sourceApp}:${normalizeForDuplicate(sourceText)}`;
+}
+
 async function getStoredSchedules(): Promise<Schedule[]> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY);
@@ -157,6 +162,7 @@ interface HeadlessPayload {
 }
 
 export default async function notificationTask(payload: HeadlessPayload) {
+  let inFlightKey: string | null = null;
   try {
     if (!payload?.notification) {
       console.log('[NotificationTask] empty payload');
@@ -176,6 +182,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
     }
 
     const appSettings = await getAppSettings();
+    console.log('[NotificationTask] settings:', {
+      autoSync: appSettings.autoSync,
+      autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
+      autoSyncRequireLocation: appSettings.autoSyncRequireLocation,
+      ignoredKeywords: appSettings.ignoredKeywords.length,
+    });
 
     if (!(await isNotificationSourceEnabled(notification.app, appSettings))) {
       console.log('[NotificationTask] skipped — source disabled');
@@ -202,6 +214,13 @@ export default async function notificationTask(payload: HeadlessPayload) {
       console.log('[NotificationTask] skipped — duplicate text');
       return;
     }
+
+    inFlightKey = getInFlightKey(notification.app, notification.text);
+    if (IN_FLIGHT_NOTIFICATIONS.has(inFlightKey)) {
+      console.log('[NotificationTask] skipped — already processing');
+      return;
+    }
+    IN_FLIGHT_NOTIFICATIONS.add(inFlightKey);
 
     console.log('[NotificationTask] analyzing with Gemini...');
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY!;
@@ -309,10 +328,15 @@ export default async function notificationTask(payload: HeadlessPayload) {
 
     // 수동 확인 경로 (기본값 또는 자동등록 실패 폴백)
     await saveScheduleToStorage(baseSchedule);
+    const fallbackTitle = baseSchedule.processingNote
+      ? `확인 필요: ${extracted.title}`
+      : `일정 감지됨: ${extracted.title}`;
+    const fallbackBody = baseSchedule.processingNote
+      ?? `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`;
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `일정 감지됨: ${extracted.title}`,
-        body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
+        title: fallbackTitle,
+        body: fallbackBody,
         data: { pendingId: scheduleId },
       },
       trigger: { channelId: 'schedule-detected' } as any,
@@ -320,5 +344,9 @@ export default async function notificationTask(payload: HeadlessPayload) {
     console.log('[NotificationTask] saved pending:', extracted.title);
   } catch (err) {
     console.error('[NotificationTask] failed:', err);
+  } finally {
+    if (inFlightKey) {
+      IN_FLIGHT_NOTIFICATIONS.delete(inFlightKey);
+    }
   }
 }

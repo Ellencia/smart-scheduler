@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { FlatList, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { useAppStore } from '../../src/stores/appStore';
@@ -129,6 +129,12 @@ export default function HomeScreen() {
     .slice(0, 10);
   const { entry, show: showUndo, undo, dismiss: dismissUndo } = useUndoSnackbar();
   const { message: successMsg, show: showSuccess, dismiss: dismissSuccess } = useSuccessToast();
+
+  useFocusEffect(
+    useCallback(() => {
+      usePendingScheduleStore.persist.rehydrate();
+    }, [])
+  );
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>

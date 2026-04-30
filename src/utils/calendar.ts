@@ -11,7 +11,7 @@ export const WEEKDAYS_FULL = [
 
 export interface CalendarDay {
   day: number;
-  overflow: boolean; // true = 이전/다음 달 날짜
+  overflow: 'none' | 'prev' | 'next';
 }
 
 // 한 달의 7×N 그리드. 앞뒤 빈 칸은 인접 달 날짜로 채움
@@ -22,12 +22,12 @@ export function getMonthGrid(year: number, month: number): CalendarDay[] {
 
   const grid: CalendarDay[] = [];
   for (let i = startWeekday - 1; i >= 0; i--)
-    grid.push({ day: prevLastDate - i, overflow: true });
+    grid.push({ day: prevLastDate - i, overflow: 'prev' });
   for (let d = 1; d <= lastDate; d++)
-    grid.push({ day: d, overflow: false });
+    grid.push({ day: d, overflow: 'none' });
   let nextDay = 1;
   while (grid.length % 7 !== 0)
-    grid.push({ day: nextDay++, overflow: true });
+    grid.push({ day: nextDay++, overflow: 'next' });
   return grid;
 }
 

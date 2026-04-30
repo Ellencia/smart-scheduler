@@ -33,14 +33,23 @@ export default function CalendarScreen() {
   const [month, setMonth] = useState(TODAY.getMonth());
   const [selectedDay, setSelectedDay] = useState<number | null>(TODAY.getDate());
 
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonth = month === 0 ? 11 : month - 1;
+  const nextYear = month === 11 ? year + 1 : year;
+  const nextMonth = month === 11 ? 0 : month + 1;
+
   const datesWithEvents = useMemo(() => {
-    const set = new Set<number>();
+    const cur = new Set<number>();
+    const prev = new Set<number>();
+    const next = new Set<number>();
     for (const e of events) {
       const p = ymdToParts(e.date);
-      if (p.year === year && p.month === month) set.add(p.day);
+      if (p.year === year && p.month === month) cur.add(p.day);
+      else if (p.year === prevYear && p.month === prevMonth) prev.add(p.day);
+      else if (p.year === nextYear && p.month === nextMonth) next.add(p.day);
     }
-    return set;
-  }, [events, year, month]);
+    return { cur, prev, next };
+  }, [events, year, month, prevYear, prevMonth, nextYear, nextMonth]);
 
   const selectedDate = selectedDay !== null ? ymd(year, month, selectedDay) : null;
   const dayEvents = useMemo(() => {
@@ -142,25 +151,48 @@ export default function CalendarScreen() {
 
             <View style={styles.grid}>
               {grid.map(({ day, overflow }, idx) => {
-                const today = !overflow && isToday(day);
-                const selected = !overflow && selectedDay === day;
-                const hasEvent = !overflow && datesWithEvents.has(day);
+                const isCur = overflow === 'none';
+                const today = isCur && isToday(day);
+                const selected = isCur && selectedDay === day;
+                const hasEvent = isCur
+                  ? datesWithEvents.cur.has(day)
+                  : overflow === 'prev'
+                  ? datesWithEvents.prev.has(day)
+                  : datesWithEvents.next.has(day);
                 const dayOfWeek = idx % 7;
+
+                const handlePress = () => {
+                  if (isCur) {
+                    setSelectedDay(day);
+                  } else if (overflow === 'prev') {
+                    animateMonth('prev', () => {
+                      if (month === 0) { setYear((y) => y - 1); setMonth(11); }
+                      else setMonth((m) => m - 1);
+                      setSelectedDay(day);
+                    });
+                  } else {
+                    animateMonth('next', () => {
+                      if (month === 11) { setYear((y) => y + 1); setMonth(0); }
+                      else setMonth((m) => m + 1);
+                      setSelectedDay(day);
+                    });
+                  }
+                };
 
                 return (
                   <TouchableOpacity
                     key={idx}
                     style={styles.cell}
-                    onPress={() => { if (!overflow) setSelectedDay(day); }}
-                    activeOpacity={overflow ? 1 : 0.6}
+                    onPress={handlePress}
+                    activeOpacity={0.6}
                   >
                     <View style={[styles.dayWrap, selected && styles.daySelected]}>
                       <Text
                         style={[
                           styles.dayText,
-                          overflow && styles.dayOverflow,
-                          !overflow && dayOfWeek === 0 && { color: colors.sundayColor },
-                          !overflow && dayOfWeek === 6 && { color: colors.saturdayColor },
+                          !isCur && styles.dayOverflow,
+                          isCur && dayOfWeek === 0 && { color: colors.sundayColor },
+                          isCur && dayOfWeek === 6 && { color: colors.saturdayColor },
                           today && !selected && { color: colors.accent, fontWeight: '700' },
                           selected && { color: colors.text, fontWeight: '700' },
                         ]}
@@ -168,7 +200,7 @@ export default function CalendarScreen() {
                         {day}
                       </Text>
                     </View>
-                    {hasEvent && <View style={styles.eventDot} />}
+                    {hasEvent && <View style={[styles.eventDot, !isCur && styles.eventDotOverflow]} />}
                   </TouchableOpacity>
                 );
               })}
@@ -289,6 +321,7 @@ function makeStyles(c: AppColors) {
     },
     dayText: { fontSize: 15, color: c.text, fontWeight: '500' },
     dayOverflow: { color: c.faint },
+    eventDotOverflow: { backgroundColor: c.faint },
     eventDot: {
       position: 'absolute',
       bottom: 4,

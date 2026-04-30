@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { Platform, StatusBar } from 'react-native';
+import { AppState, Platform, StatusBar } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import { queryClient } from '../src/utils/queryClient';
 import { useAppStore } from '../src/stores/appStore';
+import { usePendingScheduleStore } from '../src/stores/pendingScheduleStore';
 import { useColors } from '../src/hooks/useColors';
 import { DARK_COLORS } from '../src/theme/colors';
 
@@ -44,6 +45,15 @@ export default function RootLayout() {
       router.replace('/onboarding');
     }
   }, [onboardingCompleted, router]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        usePendingScheduleStore.persist.rehydrate();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     setupNotifications();

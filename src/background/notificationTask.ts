@@ -11,6 +11,7 @@ import {
   type ReminderMinutes,
 } from '../stores/appStore';
 import type { Schedule, ScheduleProcessingReason } from '../types/schedule';
+import { devLog } from '../utils/devLog';
 
 const KAKAO_APP = 'com.kakao.talk';
 const SMS_APPS = new Set([
@@ -131,6 +132,11 @@ function getInFlightKey(sourceApp: string, sourceText: string): string {
 
 function logDecision(reason: string, detail?: Record<string, unknown>) {
   console.log('[NotificationTask] decision:', reason, detail ?? {});
+  const level = reason.startsWith('skip') ? 'warn'
+    : reason.startsWith('fallback') ? 'warn'
+    : reason.includes('error') || reason.includes('fail') ? 'error'
+    : 'info';
+  devLog('NotificationTask', reason, detail, level).catch(() => {});
 }
 
 function isValidDate(value: string | null | undefined): boolean {
@@ -209,6 +215,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
         : payload.notification;
 
     console.log('[NotificationTask] received:', notification.app, '|', notification.title);
+    devLog('NotificationTask', 'received', { app: notification.app, title: notification.title }).catch(() => {});
 
     if (!TARGET_APPS.has(notification.app)) {
       logDecision('skip:not-target-app', { app: notification.app });
@@ -424,7 +431,9 @@ export default async function notificationTask(payload: HeadlessPayload) {
       { title: extracted.title }
     );
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error('[NotificationTask] failed:', err);
+    devLog('NotificationTask', 'error:unhandled', { message: msg }, 'error').catch(() => {});
   } finally {
     if (inFlightKey) {
       IN_FLIGHT_NOTIFICATIONS.delete(inFlightKey);

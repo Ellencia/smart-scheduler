@@ -27,6 +27,7 @@ import { useColors } from '../../src/hooks/useColors';
 import { RADIUS } from '../../src/theme/colors';
 import type { AppColors, ThemeMode } from '../../src/theme/colors';
 import notificationTask from '../../src/background/notificationTask';
+import { DevLogViewer } from '../../src/components/DevLogViewer';
 
 const DEV_TAP_REQUIRED = 7;
 
@@ -546,6 +547,8 @@ export default function SettingsScreen() {
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.faint} />
             </TouchableOpacity>
+
+            <DevLogViewer />
           </>
         )}
       </ScrollView>

@@ -20,9 +20,19 @@ export interface SourceSettings {
   sms: boolean;
 }
 
+export interface RequiredEventFields {
+  time: boolean;
+  location: boolean;
+}
+
 export const DEFAULT_SOURCE_SETTINGS: SourceSettings = {
   kakao: true,
   sms: true,
+};
+
+export const DEFAULT_REQUIRED_EVENT_FIELDS: RequiredEventFields = {
+  time: true,
+  location: false,
 };
 
 interface AppState {
@@ -30,18 +40,18 @@ interface AppState {
   reminderMinutes: ReminderMinutes;
   theme: ThemeMode;
   sourceSettings: SourceSettings;
+  requiredEventFields: RequiredEventFields;
   autoSync: boolean;
   autoSyncMinConfidence: number;
-  autoSyncRequireLocation: boolean;
   ignoredKeywords: string[];
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   setReminderMinutes: (v: ReminderMinutes) => void;
   setTheme: (v: ThemeMode) => void;
   setSourceEnabled: (source: NotificationSource, enabled: boolean) => void;
+  setRequiredEventField: (field: keyof RequiredEventFields, required: boolean) => void;
   setAutoSync: (v: boolean) => void;
   setAutoSyncMinConfidence: (v: number) => void;
-  setAutoSyncRequireLocation: (v: boolean) => void;
   setIgnoredKeywords: (v: string[]) => void;
 }
 
@@ -52,9 +62,9 @@ export const useAppStore = create<AppState>()(
       reminderMinutes: 10,
       theme: 'system',
       sourceSettings: DEFAULT_SOURCE_SETTINGS,
+      requiredEventFields: DEFAULT_REQUIRED_EVENT_FIELDS,
       autoSync: false,
       autoSyncMinConfidence: 0.75,
-      autoSyncRequireLocation: false,
       ignoredKeywords: [],
       completeOnboarding: () => set({ onboardingCompleted: true }),
       resetOnboarding: () => set({ onboardingCompleted: false }),
@@ -64,9 +74,12 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           sourceSettings: { ...state.sourceSettings, [source]: enabled },
         })),
+      setRequiredEventField: (field, required) =>
+        set((state) => ({
+          requiredEventFields: { ...state.requiredEventFields, [field]: required },
+        })),
       setAutoSync: (v) => set({ autoSync: v }),
       setAutoSyncMinConfidence: (v) => set({ autoSyncMinConfidence: v }),
-      setAutoSyncRequireLocation: (v) => set({ autoSyncRequireLocation: v }),
       setIgnoredKeywords: (v) => set({ ignoredKeywords: v }),
     }),
     {

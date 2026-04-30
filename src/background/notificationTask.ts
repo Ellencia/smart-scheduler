@@ -3,7 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractScheduleFromText } from '../services/gemini';
 import { createCalendarEvent } from '../services/googleCalendar';
 import { getStoredToken } from '../services/googleAuth';
-import { DEFAULT_SOURCE_SETTINGS, type SourceSettings, type ReminderMinutes } from '../stores/appStore';
+import {
+  DEFAULT_REQUIRED_EVENT_FIELDS,
+  DEFAULT_SOURCE_SETTINGS,
+  type RequiredEventFields,
+  type SourceSettings,
+  type ReminderMinutes,
+} from '../stores/appStore';
 import type { Schedule, ScheduleProcessingReason } from '../types/schedule';
 
 const KAKAO_APP = 'com.kakao.talk';
@@ -55,19 +61,19 @@ const IN_FLIGHT_NOTIFICATIONS = new Set<string>();
 
 interface AppSettings {
   sourceSettings: SourceSettings;
+  requiredEventFields: RequiredEventFields;
   reminderMinutes: ReminderMinutes;
   autoSync: boolean;
   autoSyncMinConfidence: number;
-  autoSyncRequireLocation: boolean;
   ignoredKeywords: string[];
 }
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   sourceSettings: DEFAULT_SOURCE_SETTINGS,
+  requiredEventFields: DEFAULT_REQUIRED_EVENT_FIELDS,
   reminderMinutes: 10,
   autoSync: false,
   autoSyncMinConfidence: 0.75,
-  autoSyncRequireLocation: false,
   ignoredKeywords: [],
 };
 
@@ -78,10 +84,13 @@ async function getAppSettings(): Promise<AppSettings> {
     const parsed = JSON.parse(raw);
     return {
       sourceSettings: { ...DEFAULT_SOURCE_SETTINGS, ...parsed?.state?.sourceSettings },
+      requiredEventFields: {
+        ...DEFAULT_REQUIRED_EVENT_FIELDS,
+        ...parsed?.state?.requiredEventFields,
+      },
       reminderMinutes: parsed?.state?.reminderMinutes ?? 10,
       autoSync: parsed?.state?.autoSync ?? false,
       autoSyncMinConfidence: parsed?.state?.autoSyncMinConfidence ?? 0.75,
-      autoSyncRequireLocation: parsed?.state?.autoSyncRequireLocation ?? false,
       ignoredKeywords: parsed?.state?.ignoredKeywords ?? [],
     };
   } catch {
@@ -119,6 +128,24 @@ function getInFlightKey(sourceApp: string, sourceText: string): string {
 
 function logDecision(reason: string, detail?: Record<string, unknown>) {
   console.log('[NotificationTask] decision:', reason, detail ?? {});
+}
+
+function isValidDate(value: string | null | undefined): boolean {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isValidTime(value: string | null | undefined): boolean {
+  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+}
+
+function getMissingRequiredFields(
+  event: { date?: string | null; time?: string | null; location?: string | null },
+  required: RequiredEventFields
+): string[] {
+  const missing: string[] = [];
+  if (required.time && !isValidTime(event.time)) missing.push('time');
+  if (required.location && !event.location?.trim()) missing.push('location');
+  return missing;
 }
 
 async function getStoredSchedules(): Promise<Schedule[]> {
@@ -189,7 +216,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
     console.log('[NotificationTask] settings:', {
       autoSync: appSettings.autoSync,
       autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
-      autoSyncRequireLocation: appSettings.autoSyncRequireLocation,
+      requiredEventFields: appSettings.requiredEventFields,
       ignoredKeywords: appSettings.ignoredKeywords.length,
     });
 
@@ -239,6 +266,17 @@ export default async function notificationTask(payload: HeadlessPayload) {
       return;
     }
 
+    if (!isValidDate(extracted.date)) {
+      logDecision('skip:missing-date');
+      return;
+    }
+
+    const missingRequiredFields = getMissingRequiredFields(extracted, appSettings.requiredEventFields);
+    if (missingRequiredFields.length > 0) {
+      logDecision('skip:missing-required-fields', { missingRequiredFields });
+      return;
+    }
+
     // [2단계] 같은 제목+날짜+시간 일정이 이미 존재하면 스킵
     if (await isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
       logDecision('skip:duplicate-schedule', {
@@ -269,6 +307,24 @@ export default async function notificationTask(payload: HeadlessPayload) {
 
     // 자동등록 ON: 캘린더에 바로 등록, 실패 시 pending으로 폴백
     if (appSettings.autoSync) {
+      if (!isValidTime(extracted.time)) {
+        await saveScheduleToStorage({
+          ...baseSchedule,
+          processingNote: '자동등록 보류: 시간 정보 없음',
+          processingReason: 'manual_pending',
+        });
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `확인 필요: ${extracted.title}`,
+            body: '시간 정보가 없어 자동등록하지 않았습니다.',
+            data: { pendingId: scheduleId },
+          },
+          trigger: { channelId: 'schedule-detected' } as any,
+        });
+        logDecision('fallback:missing-time');
+        return;
+      }
+
       if (extracted.confidence < appSettings.autoSyncMinConfidence) {
         await saveScheduleToStorage({
           ...baseSchedule,
@@ -284,24 +340,6 @@ export default async function notificationTask(payload: HeadlessPayload) {
           trigger: { channelId: 'schedule-detected' } as any,
         });
         logDecision('fallback:low-confidence', { confidence: extracted.confidence });
-        return;
-      }
-
-      if (appSettings.autoSyncRequireLocation && !extracted.location) {
-        await saveScheduleToStorage({
-          ...baseSchedule,
-          processingNote: '자동등록 보류: 장소 정보 없음',
-          processingReason: 'fallback_missing_location',
-        });
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: `확인 필요: ${extracted.title}`,
-            body: '장소 정보가 없어 자동등록하지 않았습니다.',
-            data: { pendingId: scheduleId },
-          },
-          trigger: { channelId: 'schedule-detected' } as any,
-        });
-        logDecision('fallback:missing-location');
         return;
       }
 

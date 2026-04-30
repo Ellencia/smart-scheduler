@@ -52,6 +52,12 @@ function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typ
   return <Text style={styles.sectionLabel}>{label}</Text>;
 }
 
+function requiredFieldSubtitle(label: string, enabled: boolean): string {
+  return enabled
+    ? `${label} 정보가 존재할 때만 일정으로 처리합니다`
+    : `${label} 정보가 없어도 확인 카드로 처리합니다`;
+}
+
 function SourceRow({
   iconBg,
   iconText,
@@ -110,12 +116,12 @@ export default function SettingsScreen() {
   const setTheme = useAppStore((s) => s.setTheme);
   const sourceSettings = useAppStore((s) => s.sourceSettings);
   const setSourceEnabled = useAppStore((s) => s.setSourceEnabled);
+  const requiredEventFields = useAppStore((s) => s.requiredEventFields);
+  const setRequiredEventField = useAppStore((s) => s.setRequiredEventField);
   const autoSync = useAppStore((s) => s.autoSync);
   const setAutoSync = useAppStore((s) => s.setAutoSync);
   const autoSyncMinConfidence = useAppStore((s) => s.autoSyncMinConfidence);
   const setAutoSyncMinConfidence = useAppStore((s) => s.setAutoSyncMinConfidence);
-  const autoSyncRequireLocation = useAppStore((s) => s.autoSyncRequireLocation);
-  const setAutoSyncRequireLocation = useAppStore((s) => s.setAutoSyncRequireLocation);
   const ignoredKeywords = useAppStore((s) => s.ignoredKeywords);
   const setIgnoredKeywords = useAppStore((s) => s.setIgnoredKeywords);
   const addPending = usePendingScheduleStore((s) => s.addPending);
@@ -332,6 +338,27 @@ export default function SettingsScreen() {
           disabled
         />
 
+        {/* 인식 필터 */}
+        <SectionLabel label="인식 필수 정보" styles={styles} />
+        <SourceRow
+          iconBg={colors.accentDim}
+          iconIsIon
+          ionName="time-outline"
+          title="시간"
+          subtitle={requiredFieldSubtitle('시간', requiredEventFields.time)}
+          enabled={requiredEventFields.time}
+          onToggle={(enabled) => setRequiredEventField('time', enabled)}
+        />
+        <SourceRow
+          iconBg={colors.accentDim}
+          iconIsIon
+          ionName="location-outline"
+          title="장소"
+          subtitle={requiredFieldSubtitle('장소', requiredEventFields.location)}
+          enabled={requiredEventFields.location}
+          onToggle={(enabled) => setRequiredEventField('location', enabled)}
+        />
+
         {/* 캘린더 자동등록 */}
         <SectionLabel label="캘린더 자동등록" styles={styles} />
         <SourceRow
@@ -367,18 +394,6 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 );
               })}
-            </View>
-            <View style={styles.optionRow}>
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle}>장소 있는 일정만 자동등록</Text>
-                <Text style={styles.cardSub}>장소가 없으면 확인 카드로 전환</Text>
-              </View>
-              <Switch
-                value={autoSyncRequireLocation}
-                onValueChange={setAutoSyncRequireLocation}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor={colors.surface}
-              />
             </View>
           </View>
         )}

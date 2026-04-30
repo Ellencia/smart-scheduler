@@ -125,8 +125,23 @@ export async function deleteCalendarEvent(
   eventId: string,
   accessToken: string
 ): Promise<void> {
-  await fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
+  let response = await fetch(`${CALENDAR_API}/calendars/primary/events/${encodeURIComponent(eventId)}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+
+  if (response.status === 401) {
+    const newToken = await refreshAccessToken();
+    response = await fetch(`${CALENDAR_API}/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${newToken}` },
+    });
+  }
+
+  if (response.status === 404 || response.status === 410) return;
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(`Calendar API error: ${err?.error?.message ?? response.status}`);
+  }
 }

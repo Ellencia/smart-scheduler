@@ -11,6 +11,7 @@ import {
   Pressable,
   ActivityIndicator,
   TextInput,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +21,8 @@ import { useCalendarSync, CalendarCancelled } from '../../src/hooks/useCalendarS
 import { useColors } from '../../src/hooks/useColors';
 import { RADIUS } from '../../src/theme/colors';
 import type { AppColors } from '../../src/theme/colors';
-import type { ConflictEvent } from '../../src/services/googleCalendar';
+import { deleteCalendarEvent, type ConflictEvent } from '../../src/services/googleCalendar';
+import { getStoredToken } from '../../src/services/googleAuth';
 import { getAppMeta } from '../../src/utils/sourceApps';
 
 function fmtTime(iso: string): string {
@@ -62,6 +64,11 @@ function parseTime(s: string): Date {
     d.setHours(h, min, 0, 0);
   }
   return d;
+}
+
+function calendarDayUrl(date: string): string {
+  const [year, month, day] = date.split('-');
+  return `https://calendar.google.com/calendar/u/0/r/day/${year}/${month}/${day}`;
 }
 
 function DateField({
@@ -123,6 +130,7 @@ export default function ScheduleDetailScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const pendingSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
   const update = usePendingScheduleStore((s) => s.update);
+  const reject = usePendingScheduleStore((s) => s.reject);
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
 
   const schedule = pendingSchedules.find((s) => s.id === id);
@@ -134,6 +142,7 @@ export default function ScheduleDetailScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [syncSucceeded, setSyncSucceeded] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   if (!schedule) {
     return (
@@ -184,6 +193,55 @@ export default function ScheduleDetailScreen() {
     router.back();
   };
 
+  const handleShowRawText = () => {
+    Alert.alert('원본 알림', schedule.sourceText);
+  };
+
+  const handleOpenGoogleCalendar = async () => {
+    try {
+      const url = calendarDayUrl(schedule.date);
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error('Google 캘린더를 열 수 없습니다.');
+      await Linking.openURL(url);
+    } catch (error) {
+      Alert.alert('열기 실패', error instanceof Error ? error.message : 'Google 캘린더를 열 수 없습니다.');
+    }
+  };
+
+  const handleDeleteSynced = () => {
+    if (!schedule.calendarEventId) {
+      reject(schedule.id);
+      router.back();
+      return;
+    }
+
+    Alert.alert(
+      '일정 삭제',
+      `"${schedule.title}" 일정을 앱과 Google 캘린더에서 모두 삭제할까요?`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              const token = await getStoredToken();
+              if (!token) throw new Error('Google 로그인이 필요합니다.');
+              await deleteCalendarEvent(schedule.calendarEventId!, token);
+              reject(schedule.id);
+              router.back();
+            } catch (error) {
+              Alert.alert('삭제 실패', error instanceof Error ? error.message : '일정을 삭제하지 못했습니다.');
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const meta = getAppMeta(schedule.sourceApp);
 
   return (
@@ -203,14 +261,15 @@ export default function ScheduleDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.rawBox}>
+          <TouchableOpacity style={styles.rawBox} onPress={handleShowRawText} activeOpacity={0.75}>
             <View style={[styles.sourceLetter, { backgroundColor: meta.bg }]}>
               <Text style={[styles.sourceLetterText, { color: meta.fg }]}>{meta.letter}</Text>
             </View>
             <Text style={styles.rawText} numberOfLines={2}>
               "{schedule.sourceText}"
             </Text>
-          </View>
+            <Ionicons name="expand-outline" size={16} color={colors.faint} />
+          </TouchableOpacity>
 
           {schedule.processingNote && (
             <View style={styles.statusBox}>
@@ -221,6 +280,15 @@ export default function ScheduleDetailScreen() {
               />
               <Text style={[styles.statusText, isSynced && { color: colors.success }]}>
                 {schedule.processingNote}
+              </Text>
+            </View>
+          )}
+
+          {isSynced && (
+            <View style={styles.statusBox}>
+              <Ionicons name="lock-closed-outline" size={17} color={colors.muted} />
+              <Text style={styles.statusText}>
+                Google 캘린더에 등록된 일정입니다. 수정은 Google 캘린더에서 진행해주세요.
               </Text>
             </View>
           )}
@@ -296,8 +364,18 @@ export default function ScheduleDetailScreen() {
 
           {isSynced ? (
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.btnPrimary} onPress={() => router.back()}>
-                <Text style={styles.btnPrimaryText}>닫기</Text>
+              <TouchableOpacity style={styles.btnDanger} onPress={handleDeleteSynced} disabled={isDeleting}>
+                {isDeleting ? (
+                  <ActivityIndicator color={colors.danger} />
+                ) : (
+                  <Text style={styles.btnDangerText}>삭제</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSecondary} onPress={() => router.back()} disabled={isDeleting}>
+                <Text style={styles.btnSecondaryText}>닫기</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnPrimary} onPress={handleOpenGoogleCalendar} disabled={isDeleting}>
+                <Text style={styles.btnPrimaryText}>캘린더 열기</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -376,7 +454,7 @@ function makeStyles(c: AppColors) {
       borderTopRightRadius: RADIUS.sheet,
       paddingHorizontal: 20,
       paddingBottom: 24,
-      maxHeight: '88%',
+      maxHeight: '100%',
     },
     center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
     handle: {
@@ -471,6 +549,12 @@ function makeStyles(c: AppColors) {
       alignItems: 'center', justifyContent: 'center',
     },
     btnSecondaryText: { color: c.text, fontSize: 15 },
+    btnDanger: {
+      flex: 1, paddingVertical: 14, borderRadius: RADIUS.lg,
+      backgroundColor: c.dangerBg,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    btnDangerText: { color: c.danger, fontWeight: '600', fontSize: 15 },
     btnDisabled: { opacity: 0.5 },
   });
 }

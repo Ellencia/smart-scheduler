@@ -482,19 +482,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* AI 모델 */}
-        <SectionLabel label="AI 모델" styles={styles} />
-        <View style={styles.card}>
-          <View style={styles.modelIconBox}>
-            <Ionicons name="add" size={18} color={colors.accent} />
-          </View>
-          <View style={styles.cardBody}>
-            <Text style={styles.cardTitle}>Gemini 2.5 Flash</Text>
-            <Text style={styles.cardSub}>텍스트 분석 · 빠른 응답</Text>
-          </View>
-          <Text style={styles.activeText}>사용중</Text>
-        </View>
-
         {/* 버전 */}
         <TouchableOpacity onPress={handleVersionTap} style={styles.versionRow} activeOpacity={0.6}>
           <Text style={styles.versionText}>버전 1.0.0</Text>
@@ -632,7 +619,6 @@ function makeStyles(c: AppColors) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    activeText: { fontSize: 13, color: c.accent, fontWeight: '600' },
     versionRow: { alignItems: 'center', paddingVertical: 20, gap: 4 },
     versionText: { fontSize: 12, color: c.faint },
     versionHint: { fontSize: 11, color: c.muted },

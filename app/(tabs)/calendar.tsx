@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, PanResponder } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, PanResponder } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,6 +9,8 @@ import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
 import { useColors } from '../../src/hooks/useColors';
 import { RADIUS } from '../../src/theme/colors';
 import type { AppColors } from '../../src/theme/colors';
+import { deleteCalendarEvent } from '../../src/services/googleCalendar';
+import { getStoredToken } from '../../src/services/googleAuth';
 import {
   WEEKDAYS_SHORT,
   WEEKDAYS_FULL,
@@ -28,6 +30,7 @@ export default function CalendarScreen() {
   const reject = usePendingScheduleStore((s) => s.reject);
   const events = all.filter((s) => s.status === 'confirmed' || s.status === 'synced');
   const { entry, show, undo, dismiss } = useUndoSnackbar();
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
 
   useFocusEffect(
     useCallback(() => {
@@ -113,6 +116,58 @@ export default function CalendarScreen() {
       },
     })
   ).current;
+
+  const setDeleting = (id: string, deleting: boolean) => {
+    setDeletingIds((prev) => {
+      const next = new Set(prev);
+      if (deleting) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const deleteSyncedEvent = async (event: (typeof events)[number]) => {
+    if (!event.calendarEventId) {
+      reject(event.id);
+      return;
+    }
+
+    const token = await getStoredToken();
+    if (!token) throw new Error('Google 로그인이 필요합니다.');
+
+    setDeleting(event.id, true);
+    try {
+      await deleteCalendarEvent(event.calendarEventId, token);
+      reject(event.id);
+    } finally {
+      setDeleting(event.id, false);
+    }
+  };
+
+  const handleDeleteEvent = (event: (typeof events)[number]) => {
+    if (event.status !== 'synced') {
+      show(event.id, event.status, `"${event.title}" 일정이 삭제되었습니다`);
+      reject(event.id);
+      return;
+    }
+
+    Alert.alert(
+      '일정 삭제',
+      `"${event.title}" 일정을 앱과 Google 캘린더에서 모두 삭제할까요?`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: () => {
+            deleteSyncedEvent(event).catch((error) => {
+              Alert.alert('삭제 실패', error.message);
+            });
+          },
+        },
+      ]
+    );
+  };
 
   const selectedLabel =
     selectedDay !== null
@@ -257,13 +312,17 @@ export default function CalendarScreen() {
                   <TouchableOpacity
                     onPress={(evt) => {
                       evt.stopPropagation();
-                      show(e.id, e.status, `"${e.title}" 일정이 삭제되었습니다`);
-                      reject(e.id);
+                      handleDeleteEvent(e);
                     }}
                     hitSlop={10}
                     style={styles.dismissBtn}
+                    disabled={deletingIds.has(e.id)}
                   >
-                    <Ionicons name="close" size={16} color={colors.faint} />
+                    <Ionicons
+                      name={deletingIds.has(e.id) ? 'hourglass-outline' : 'close'}
+                      size={16}
+                      color={colors.faint}
+                    />
                   </TouchableOpacity>
                 </TouchableOpacity>
               );

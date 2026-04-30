@@ -3,6 +3,7 @@ export type ScheduleProcessingReason =
   | 'auto_synced'
   | 'fallback_no_token'
   | 'fallback_low_confidence'
+  | 'fallback_calendar_conflict'
   | 'fallback_calendar_error'
   | 'manual_pending';
 

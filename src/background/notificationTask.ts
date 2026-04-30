@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractScheduleFromText } from '../services/gemini';
-import { createCalendarEvent } from '../services/googleCalendar';
+import { createCalendarEvent, listConflictingEvents } from '../services/googleCalendar';
 import { getStoredToken } from '../services/googleAuth';
 import {
   DEFAULT_REQUIRED_EVENT_FIELDS,
@@ -65,6 +65,7 @@ interface AppSettings {
   reminderMinutes: ReminderMinutes;
   autoSync: boolean;
   autoSyncMinConfidence: number;
+  autoSyncAllowConflicts: boolean;
   ignoredKeywords: string[];
 }
 
@@ -74,6 +75,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   reminderMinutes: 10,
   autoSync: false,
   autoSyncMinConfidence: 0.75,
+  autoSyncAllowConflicts: false,
   ignoredKeywords: [],
 };
 
@@ -91,6 +93,7 @@ async function getAppSettings(): Promise<AppSettings> {
       reminderMinutes: parsed?.state?.reminderMinutes ?? 10,
       autoSync: parsed?.state?.autoSync ?? false,
       autoSyncMinConfidence: parsed?.state?.autoSyncMinConfidence ?? 0.75,
+      autoSyncAllowConflicts: parsed?.state?.autoSyncAllowConflicts ?? false,
       ignoredKeywords: parsed?.state?.ignoredKeywords ?? [],
     };
   } catch {
@@ -216,6 +219,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
     console.log('[NotificationTask] settings:', {
       autoSync: appSettings.autoSync,
       autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
+      autoSyncAllowConflicts: appSettings.autoSyncAllowConflicts,
       requiredEventFields: appSettings.requiredEventFields,
       ignoredKeywords: appSettings.ignoredKeywords.length,
     });
@@ -346,6 +350,27 @@ export default async function notificationTask(payload: HeadlessPayload) {
       const token = await getStoredToken();
       if (token) {
         try {
+          if (!appSettings.autoSyncAllowConflicts) {
+            const conflicts = await listConflictingEvents(extracted.date, extracted.time, token);
+            if (conflicts.length > 0) {
+              await saveScheduleToStorage({
+                ...baseSchedule,
+                processingNote: `자동등록 보류: 같은 시간대 일정 ${conflicts.length}개`,
+                processingReason: 'fallback_calendar_conflict',
+              });
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: `확인 필요: ${extracted.title}`,
+                  body: '같은 시간대 일정이 있어 자동등록하지 않았습니다.',
+                  data: { pendingId: scheduleId },
+                },
+                trigger: { channelId: 'schedule-detected' } as any,
+              });
+              logDecision('fallback:calendar-conflict', { conflicts: conflicts.length });
+              return;
+            }
+          }
+
           logDecision('auto-sync:start');
           const calendarEventId = await createCalendarEvent(baseSchedule, token, appSettings.reminderMinutes);
           await saveScheduleToStorage({

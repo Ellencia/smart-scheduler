@@ -122,6 +122,8 @@ export default function SettingsScreen() {
   const setAutoSync = useAppStore((s) => s.setAutoSync);
   const autoSyncMinConfidence = useAppStore((s) => s.autoSyncMinConfidence);
   const setAutoSyncMinConfidence = useAppStore((s) => s.setAutoSyncMinConfidence);
+  const autoSyncAllowConflicts = useAppStore((s) => s.autoSyncAllowConflicts);
+  const setAutoSyncAllowConflicts = useAppStore((s) => s.setAutoSyncAllowConflicts);
   const ignoredKeywords = useAppStore((s) => s.ignoredKeywords);
   const setIgnoredKeywords = useAppStore((s) => s.setIgnoredKeywords);
   const addPending = usePendingScheduleStore((s) => s.addPending);
@@ -394,6 +396,22 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </View>
+            <View style={styles.optionRow}>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>시간 겹침 허용</Text>
+                <Text style={styles.cardSub}>
+                  {autoSyncAllowConflicts
+                    ? '같은 시간대 일정이 있어도 자동등록합니다'
+                    : '같은 시간대 일정이 있으면 확인 카드로 보류합니다'}
+                </Text>
+              </View>
+              <Switch
+                value={autoSyncAllowConflicts}
+                onValueChange={setAutoSyncAllowConflicts}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor={colors.surface}
+              />
             </View>
           </View>
         )}

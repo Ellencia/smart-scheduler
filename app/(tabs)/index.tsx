@@ -5,7 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { NotificationCard } from '../../src/components/notifications/NotificationCard';
 import { UndoSnackbar } from '../../src/components/UndoSnackbar';
+import { SuccessToast } from '../../src/components/SuccessToast';
 import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
+import { useSuccessToast } from '../../src/hooks/useSuccessToast';
 import { useColors } from '../../src/hooks/useColors';
 import { RADIUS } from '../../src/theme/colors';
 import type { AppColors } from '../../src/theme/colors';
@@ -54,7 +56,8 @@ export default function HomeScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const allSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
   const pendingSchedules = allSchedules.filter((x) => x.status === 'pending');
-  const { entry, show, undo, dismiss } = useUndoSnackbar();
+  const { entry, show: showUndo, undo, dismiss: dismissUndo } = useUndoSnackbar();
+  const { message: successMsg, show: showSuccess, dismiss: dismissSuccess } = useSuccessToast();
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -64,7 +67,8 @@ export default function HomeScreen() {
         renderItem={({ item }) => (
           <NotificationCard
             schedule={item}
-            onReject={(id) => show(id, 'pending')}
+            onReject={(id) => showUndo(id, 'pending')}
+            onSuccess={() => showSuccess('캘린더에 등록되었습니다')}
           />
         )}
         ListHeaderComponent={<Header count={pendingSchedules.length} />}
@@ -74,7 +78,10 @@ export default function HomeScreen() {
         }
       />
       {entry && (
-        <UndoSnackbar message={entry.message} onUndo={undo} onDismiss={dismiss} />
+        <UndoSnackbar message={entry.message} onUndo={undo} onDismiss={dismissUndo} />
+      )}
+      {successMsg && (
+        <SuccessToast message={successMsg} onDismiss={dismissSuccess} />
       )}
     </SafeAreaView>
   );
@@ -96,26 +103,18 @@ function makeStyles(c: AppColors) {
     headerTitle: { fontSize: 22, fontWeight: '700', color: c.text },
     headerSub: { fontSize: 13, color: c.muted, marginTop: 4 },
     avatarBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+      width: 38, height: 38, borderRadius: 19,
       backgroundColor: c.surface,
-      borderWidth: 0.5,
-      borderColor: c.border,
-      alignItems: 'center',
-      justifyContent: 'center',
+      borderWidth: 0.5, borderColor: c.border,
+      alignItems: 'center', justifyContent: 'center',
     },
 
     emptyWrap: { alignItems: 'center', gap: 12, marginTop: 60 },
     emptyIconWrap: {
-      width: 68,
-      height: 68,
-      borderRadius: 20,
+      width: 68, height: 68, borderRadius: 20,
       backgroundColor: c.accentDim,
-      borderWidth: 1,
-      borderColor: c.border,
-      alignItems: 'center',
-      justifyContent: 'center',
+      borderWidth: 1, borderColor: c.border,
+      alignItems: 'center', justifyContent: 'center',
       marginBottom: 4,
     },
     emptyTitle: { fontSize: 18, fontWeight: '600', color: c.text },
@@ -126,8 +125,7 @@ function makeStyles(c: AppColors) {
       borderRadius: RADIUS.md,
       paddingVertical: 12,
       paddingHorizontal: 16,
-      borderWidth: 1,
-      borderColor: c.border,
+      borderWidth: 1, borderColor: c.border,
       alignItems: 'center',
     },
     exampleLabel: { fontSize: 11, color: c.faint, marginBottom: 4 },

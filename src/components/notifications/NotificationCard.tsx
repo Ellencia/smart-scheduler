@@ -1,6 +1,15 @@
-import { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useMemo, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Animated,
+  PanResponder,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCalendarSync, CalendarCancelled } from '../../hooks/useCalendarSync';
 import { usePendingScheduleStore } from '../../stores/pendingScheduleStore';
 import { useColors } from '../../hooks/useColors';
@@ -14,6 +23,7 @@ import { getAppMeta } from '../../utils/sourceApps';
 interface Props {
   schedule: Schedule;
   onReject?: (id: string) => void;
+  onSuccess?: () => void;
 }
 
 function fmtTime(iso: string): string {
@@ -63,17 +73,55 @@ function SourceBadge({ packageName }: { packageName: string }) {
   );
 }
 
-export function NotificationCard({ schedule, onReject }: Props) {
+export function NotificationCard({ schedule, onReject, onSuccess }: Props) {
   const router = useRouter();
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
   const reject = usePendingScheduleStore((s) => s.reject);
 
+  // 스와이프 애니메이션
+  const translateX = useRef(new Animated.Value(0)).current;
+  const dismissOpacity = translateX.interpolate({
+    inputRange: [-120, -20, 0],
+    outputRange: [1, 0.6, 0],
+    extrapolate: 'clamp',
+  });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8,
+      onPanResponderMove: (_, { dx }) => {
+        if (dx < 0) translateX.setValue(dx);
+      },
+      onPanResponderRelease: (_, { dx, vx }) => {
+        if (dx < -80 || vx < -0.8) {
+          Animated.timing(translateX, {
+            toValue: -600,
+            duration: 220,
+            useNativeDriver: true,
+          }).start(() => {
+            reject(schedule.id);
+            onReject?.(schedule.id);
+          });
+        } else {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 120,
+            friction: 14,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   const handleSync = () => {
     syncToCalendar(
       { schedule, onConflict: askConflict },
       {
+        onSuccess: () => onSuccess?.(),
         onError: (e) => {
           if (e instanceof CalendarCancelled) return;
           Alert.alert('등록 실패', e.message);
@@ -83,49 +131,80 @@ export function NotificationCard({ schedule, onReject }: Props) {
   };
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/schedule/${schedule.id}`)}
-      activeOpacity={0.85}
-    >
-      <View style={styles.header}>
-        <SourceBadge packageName={schedule.sourceApp} />
-        <Text style={styles.timeAgo}>{formatTimeAgo(schedule.createdAt)}</Text>
-      </View>
+    <View style={styles.swipeContainer}>
+      {/* 스와이프 배경 */}
+      <Animated.View style={[styles.dismissBg, { opacity: dismissOpacity }]}>
+        <Ionicons name="trash-outline" size={18} color="#fff" />
+        <Text style={styles.dismissBgText}>무시</Text>
+      </Animated.View>
 
-      <Text style={styles.original} numberOfLines={2}>
-        "{schedule.sourceText}"
-      </Text>
-
-      <View style={styles.pillRow}>
-        <Pill icon="📅" label={formatScheduleDateTime(schedule.date, schedule.time)} />
-        {schedule.location && <Pill icon="📍" label={schedule.location} />}
-        <Pill icon="📌" label={schedule.title} />
-      </View>
-
-      <View style={styles.actions}>
+      {/* 카드 본체 */}
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
         <TouchableOpacity
-          style={[styles.btnPrimary, isPending && styles.btnDisabled]}
-          onPress={handleSync}
-          disabled={isPending}
+          style={styles.card}
+          onPress={() => router.push(`/schedule/${schedule.id}`)}
+          activeOpacity={0.85}
         >
-          <Text style={styles.btnPrimaryText}>
-            {isPending ? '등록 중...' : '캘린더 등록'}
+          <View style={styles.header}>
+            <SourceBadge packageName={schedule.sourceApp} />
+            <Text style={styles.timeAgo}>{formatTimeAgo(schedule.createdAt)}</Text>
+          </View>
+
+          <Text style={styles.original} numberOfLines={2}>
+            "{schedule.sourceText}"
           </Text>
+
+          <View style={styles.pillRow}>
+            <Pill icon="📅" label={formatScheduleDateTime(schedule.date, schedule.time)} />
+            {schedule.location && <Pill icon="📍" label={schedule.location} />}
+            <Pill icon="📌" label={schedule.title} />
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.btnPrimary, isPending && styles.btnDisabled]}
+              onPress={handleSync}
+              disabled={isPending}
+            >
+              <Text style={styles.btnPrimaryText}>
+                {isPending ? '등록 중...' : '캘린더 등록'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnSecondary}
+              onPress={() => { reject(schedule.id); onReject?.(schedule.id); }}
+            >
+              <Text style={styles.btnSecondaryText}>무시</Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.btnSecondary}
-          onPress={() => { reject(schedule.id); onReject?.(schedule.id); }}
-        >
-          <Text style={styles.btnSecondaryText}>무시</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 }
 
 function makeStyles(c: AppColors) {
   return StyleSheet.create({
+    swipeContainer: {
+      position: 'relative',
+      borderRadius: RADIUS.xl,
+      overflow: 'hidden',
+    },
+    dismissBg: {
+      position: 'absolute',
+      top: 0, bottom: 0, right: 0,
+      width: 100,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: c.danger,
+      borderRadius: RADIUS.xl,
+    },
+    dismissBgText: { fontSize: 13, color: '#fff', fontWeight: '600' },
     card: {
       backgroundColor: c.surface,
       borderRadius: RADIUS.xl,
@@ -137,11 +216,8 @@ function makeStyles(c: AppColors) {
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     sourceWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     sourceLetter: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      alignItems: 'center',
-      justifyContent: 'center',
+      width: 22, height: 22, borderRadius: 6,
+      alignItems: 'center', justifyContent: 'center',
     },
     sourceLetterText: { fontSize: 12, fontWeight: '800' },
     sourceLabel: { fontSize: 13, color: c.text, fontWeight: '500' },
@@ -163,21 +239,13 @@ function makeStyles(c: AppColors) {
     pillText: { fontSize: 13, color: c.accent, fontWeight: '500' },
     actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
     btnPrimary: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: RADIUS.md,
-      backgroundColor: c.accentDim,
-      alignItems: 'center',
+      flex: 1, paddingVertical: 12, borderRadius: RADIUS.md,
+      backgroundColor: c.accentDim, alignItems: 'center',
     },
     btnPrimaryText: { color: c.accent, fontWeight: '600', fontSize: 14 },
     btnSecondary: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: RADIUS.md,
-      backgroundColor: 'transparent',
-      borderWidth: 0.5,
-      borderColor: c.border,
-      alignItems: 'center',
+      flex: 1, paddingVertical: 12, borderRadius: RADIUS.md,
+      backgroundColor: 'transparent', borderWidth: 0.5, borderColor: c.border, alignItems: 'center',
     },
     btnSecondaryText: { color: c.muted, fontWeight: '500', fontSize: 14 },
     btnDisabled: { opacity: 0.5 },

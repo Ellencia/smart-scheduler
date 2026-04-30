@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -13,8 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { useCalendarSync, CalendarCancelled } from '../../src/hooks/useCalendarSync';
 import { useColors } from '../../src/hooks/useColors';
@@ -45,33 +44,70 @@ function askConflict(conflicts: ConflictEvent[]): Promise<boolean> {
   });
 }
 
-function Field({
+// YYYY-MM-DD 문자열 → Date
+function parseDate(s: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date();
+}
+
+// HH:mm 문자열 → Date (오늘 날짜 기준)
+function parseTime(s: string): Date {
+  const d = new Date();
+  if (/^\d{2}:\d{2}$/.test(s)) {
+    const [h, min] = s.split(':').map(Number);
+    d.setHours(h, min, 0, 0);
+  }
+  return d;
+}
+
+function DateField({
   label,
   value,
-  onChangeText,
-  placeholder,
+  onPress,
   colors,
   styles,
 }: {
   label: string;
   value: string;
-  onChangeText: (v: string) => void;
-  placeholder?: string;
+  onPress: () => void;
   colors: AppColors;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <View style={styles.field}>
+    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.faint}
-        selectionColor={colors.accent}
-      />
-    </View>
+      <View style={styles.pickerBtn}>
+        <Ionicons name="calendar-outline" size={16} color={colors.muted} />
+        <Text style={styles.pickerBtnText}>{value || '날짜 선택'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function TimeField({
+  label,
+  value,
+  onPress,
+  colors,
+  styles,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+  colors: AppColors;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  return (
+    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.pickerBtn}>
+        <Ionicons name="time-outline" size={16} color={colors.muted} />
+        <Text style={styles.pickerBtnText}>{value || '시간 선택'}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -90,6 +126,9 @@ export default function ScheduleDetailScreen() {
   const [date, setDate] = useState(schedule?.date ?? '');
   const [time, setTime] = useState(schedule?.time ?? '');
   const [location, setLocation] = useState(schedule?.location ?? '');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [syncSucceeded, setSyncSucceeded] = useState(false);
 
   if (!schedule) {
     return (
@@ -103,8 +142,8 @@ export default function ScheduleDetailScreen() {
 
   const validate = (): string | null => {
     if (!title.trim()) return '제목을 입력해주세요.';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '날짜 형식: YYYY-MM-DD';
-    if (!/^\d{2}:\d{2}$/.test(time)) return '시간 형식: HH:mm';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '날짜를 선택해주세요.';
+    if (!/^\d{2}:\d{2}$/.test(time)) return '시간을 선택해주세요.';
     return null;
   };
 
@@ -119,7 +158,10 @@ export default function ScheduleDetailScreen() {
         onConflict: askConflict,
       },
       {
-        onSuccess: () => router.back(),
+        onSuccess: () => {
+          setSyncSucceeded(true);
+          setTimeout(() => router.back(), 900);
+        },
         onError: (e) => {
           if (e instanceof CalendarCancelled) return;
           Alert.alert('등록 실패', e.message);
@@ -168,35 +210,115 @@ export default function ScheduleDetailScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <Field label="제목" value={title} onChangeText={setTitle} placeholder="일정 제목" colors={colors} styles={styles} />
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Field label="날짜" value={date} onChangeText={setDate} placeholder="2026-04-30" colors={colors} styles={styles} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Field label="시간" value={time} onChangeText={setTime} placeholder="19:00" colors={colors} styles={styles} />
+            {/* 제목 */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>제목</Text>
+              <View style={styles.inputWrap}>
+                <Text
+                  style={[styles.inputText, !title && { color: colors.faint }]}
+                  onPress={() => {}}
+                >
+                  {title || '일정 제목'}
+                </Text>
               </View>
             </View>
-            <Field label="장소 (선택)" value={location} onChangeText={setLocation} placeholder="장소" colors={colors} styles={styles} />
+
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <DateField
+                  label="날짜"
+                  value={date}
+                  onPress={() => setShowDatePicker(true)}
+                  colors={colors}
+                  styles={styles}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <TimeField
+                  label="시간"
+                  value={time}
+                  onPress={() => setShowTimePicker(true)}
+                  colors={colors}
+                  styles={styles}
+                />
+              </View>
+            </View>
+
+            {/* 장소 */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>장소 (선택)</Text>
+              <View style={styles.inputWrap}>
+                <Text style={[styles.inputText, !location && { color: colors.faint }]}>
+                  {location || '장소'}
+                </Text>
+              </View>
+            </View>
           </ScrollView>
 
+          {/* 성공 오버레이 */}
+          {syncSucceeded && (
+            <View style={styles.successOverlay}>
+              <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+              <Text style={styles.successText}>등록되었습니다</Text>
+            </View>
+          )}
+
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.btnSecondary} onPress={handleSaveOnly} disabled={isPending}>
+            <TouchableOpacity style={styles.btnSecondary} onPress={handleSaveOnly} disabled={isPending || syncSucceeded}>
               <Text style={styles.btnSecondaryText}>수정만 저장</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.btnPrimary, isPending && styles.btnDisabled]}
+              style={[styles.btnPrimary, (isPending || syncSucceeded) && styles.btnDisabled]}
               onPress={handleSync}
-              disabled={isPending}
+              disabled={isPending || syncSucceeded}
             >
-              {isPending
-                ? <ActivityIndicator color={colors.accent} />
-                : <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
-              }
+              {syncSucceeded ? (
+                <Ionicons name="checkmark" size={20} color={colors.success} />
+              ) : isPending ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : (
+                <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
+              )}
             </TouchableOpacity>
           </View>
         </Pressable>
       </KeyboardAvoidingView>
+
+      {/* 날짜 피커 */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={parseDate(date)}
+          mode="date"
+          display="default"
+          onChange={(event, selected) => {
+            setShowDatePicker(false);
+            if (event.type === 'set' && selected) {
+              const y = selected.getFullYear();
+              const m = String(selected.getMonth() + 1).padStart(2, '0');
+              const d = String(selected.getDate()).padStart(2, '0');
+              setDate(`${y}-${m}-${d}`);
+            }
+          }}
+        />
+      )}
+
+      {/* 시간 피커 */}
+      {showTimePicker && (
+        <DateTimePicker
+          value={parseTime(time)}
+          mode="time"
+          display="default"
+          is24Hour
+          onChange={(event, selected) => {
+            setShowTimePicker(false);
+            if (event.type === 'set' && selected) {
+              const h = String(selected.getHours()).padStart(2, '0');
+              const min = String(selected.getMinutes()).padStart(2, '0');
+              setTime(`${h}:${min}`);
+            }
+          }}
+        />
+      )}
     </Pressable>
   );
 }
@@ -219,13 +341,10 @@ function makeStyles(c: AppColors) {
     },
     center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
     handle: {
-      width: 40,
-      height: 4,
-      borderRadius: 2,
+      width: 40, height: 4, borderRadius: 2,
       backgroundColor: c.border,
       alignSelf: 'center',
-      marginTop: 10,
-      marginBottom: 14,
+      marginTop: 10, marginBottom: 14,
     },
     header: {
       flexDirection: 'row',
@@ -240,18 +359,13 @@ function makeStyles(c: AppColors) {
       gap: 10,
       backgroundColor: c.surfaceAlt,
       borderRadius: RADIUS.md,
-      borderWidth: 0.5,
-      borderColor: c.border,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
+      borderWidth: 0.5, borderColor: c.border,
+      paddingHorizontal: 12, paddingVertical: 10,
       marginBottom: 16,
     },
     sourceLetter: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      alignItems: 'center',
-      justifyContent: 'center',
+      width: 22, height: 22, borderRadius: 6,
+      alignItems: 'center', justifyContent: 'center',
     },
     sourceLetterText: { fontSize: 12, fontWeight: '800' },
     rawText: { flex: 1, fontSize: 13, color: c.muted, fontStyle: 'italic', lineHeight: 19 },
@@ -259,34 +373,50 @@ function makeStyles(c: AppColors) {
     row: { flexDirection: 'row', gap: 12 },
     field: { gap: 6 },
     fieldLabel: { fontSize: 12, color: c.muted, marginLeft: 2 },
-    input: {
+    // 텍스트 입력 (제목/장소)
+    inputWrap: {
       backgroundColor: c.surfaceAlt,
       borderRadius: RADIUS.md,
-      borderWidth: 0.5,
-      borderColor: c.border,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      fontSize: 15,
-      color: c.text,
+      borderWidth: 0.5, borderColor: c.border,
+      paddingHorizontal: 12, paddingVertical: 13,
     },
-    actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
-    btnPrimary: {
-      flex: 1.5,
-      paddingVertical: 14,
-      borderRadius: RADIUS.lg,
-      backgroundColor: c.accentDim,
+    inputText: { fontSize: 15, color: c.text },
+    // 피커 버튼 (날짜/시간)
+    pickerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5, borderColor: c.border,
+      paddingHorizontal: 12, paddingVertical: 13,
+    },
+    pickerBtnText: { fontSize: 15, color: c.text },
+    // 성공 오버레이
+    successOverlay: {
+      position: 'absolute',
+      top: 0, left: 0, right: 0, bottom: 80,
+      backgroundColor: c.surface,
+      borderTopLeftRadius: RADIUS.sheet,
+      borderTopRightRadius: RADIUS.sheet,
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 10,
+      zIndex: 10,
+    },
+    successText: { fontSize: 16, fontWeight: '600', color: c.success },
+    // 액션 버튼
+    actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    btnPrimary: {
+      flex: 1.5, paddingVertical: 14, borderRadius: RADIUS.lg,
+      backgroundColor: c.accentDim,
+      alignItems: 'center', justifyContent: 'center',
     },
     btnPrimaryText: { color: c.accent, fontWeight: '600', fontSize: 15 },
     btnSecondary: {
-      flex: 1,
-      paddingVertical: 14,
-      borderRadius: RADIUS.lg,
-      borderWidth: 0.5,
-      borderColor: c.border,
-      alignItems: 'center',
-      justifyContent: 'center',
+      flex: 1, paddingVertical: 14, borderRadius: RADIUS.lg,
+      borderWidth: 0.5, borderColor: c.border,
+      alignItems: 'center', justifyContent: 'center',
     },
     btnSecondaryText: { color: c.text, fontSize: 15 },
     btnDisabled: { opacity: 0.5 },

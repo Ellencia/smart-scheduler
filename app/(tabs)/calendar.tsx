@@ -142,9 +142,18 @@ export default function CalendarScreen() {
 
         <View style={styles.eventList}>
           {dayEvents.length === 0 ? (
-            <Text style={styles.emptyText}>
-              {selectedDay === null ? '날짜를 선택해주세요' : '등록된 일정이 없습니다'}
-            </Text>
+            selectedDay === null ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="calendar-outline" size={28} color={colors.faint} />
+                <Text style={styles.emptyStateText}>날짜를 선택해주세요</Text>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="checkmark-circle-outline" size={28} color={colors.faint} />
+                <Text style={styles.emptyStateText}>이 날의 일정이 없습니다</Text>
+                <Text style={styles.emptyStateHint}>알림 탭에서 일정을 등록하면{'\n'}여기에 표시됩니다</Text>
+              </View>
+            )
           ) : (
             dayEvents.map((e) => {
               const meta = getAppMeta(e.sourceApp);
@@ -267,11 +276,12 @@ function makeStyles(c: AppColors) {
     eventTitle: { fontSize: 15, fontWeight: '600', color: c.text },
     eventSub: { fontSize: 12, color: c.muted },
     dismissBtn: { padding: 4, alignItems: 'center', justifyContent: 'center' },
-    emptyText: {
-      fontSize: 13,
-      color: c.faint,
-      textAlign: 'center',
-      paddingVertical: 24,
+    emptyState: {
+      alignItems: 'center',
+      paddingVertical: 28,
+      gap: 8,
     },
+    emptyStateText: { fontSize: 14, color: c.muted, fontWeight: '500' },
+    emptyStateHint: { fontSize: 12, color: c.faint, textAlign: 'center', lineHeight: 18 },
   });
 }

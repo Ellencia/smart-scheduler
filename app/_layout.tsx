@@ -59,9 +59,10 @@ export default function RootLayout() {
     setupNotifications();
 
     const subscription = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
+      async (response) => {
         const pendingId = response.notification.request.content.data?.pendingId;
         if (pendingId) {
+          await usePendingScheduleStore.persist.rehydrate();
           router.push(`/schedule/${pendingId}`);
         }
       }

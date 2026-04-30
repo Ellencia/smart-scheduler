@@ -7,7 +7,7 @@ export const queryClient = new QueryClient({
       retry: 2,
     },
     mutations: {
-      retry: 1,
+      retry: 0,
     },
   },
 });

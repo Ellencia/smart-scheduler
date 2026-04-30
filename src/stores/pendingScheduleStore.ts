@@ -9,6 +9,7 @@ interface PendingScheduleState {
   addPending: (event: ExtractedEvent & { sourceApp: string; sourceText: string }) => string;
   confirm: (id: string) => void;
   reject: (id: string) => void;
+  restore: (id: string, status: Schedule['status']) => void;
   update: (id: string, changes: Partial<Schedule>) => void;
   markSynced: (id: string, calendarEventId: string) => void;
 }
@@ -49,6 +50,13 @@ export const usePendingScheduleStore = create<PendingScheduleState>()(
         set((state) => ({
           pendingSchedules: state.pendingSchedules.map((s) =>
             s.id === id ? { ...s, status: 'rejected', updatedAt: new Date() } : s
+          ),
+        })),
+
+      restore: (id, status) =>
+        set((state) => ({
+          pendingSchedules: state.pendingSchedules.map((s) =>
+            s.id === id ? { ...s, status, updatedAt: new Date() } : s
           ),
         })),
 

@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
+import { UndoSnackbar } from '../../src/components/UndoSnackbar';
+import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
 import {
   WEEKDAYS_SHORT,
   WEEKDAYS_FULL,
@@ -21,6 +23,7 @@ export default function CalendarScreen() {
   const all = usePendingScheduleStore((s) => s.pendingSchedules);
   const reject = usePendingScheduleStore((s) => s.reject);
   const events = all.filter((s) => s.status === 'confirmed' || s.status === 'synced');
+  const { entry, show, undo, dismiss } = useUndoSnackbar();
 
   const [year, setYear] = useState(TODAY.getFullYear());
   const [month, setMonth] = useState(TODAY.getMonth());
@@ -167,7 +170,11 @@ export default function CalendarScreen() {
                     </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={(evt) => { evt.stopPropagation(); reject(e.id); }}
+                    onPress={(evt) => {
+                      evt.stopPropagation();
+                      show(e.id, e.status, `"${e.title}" 일정이 삭제되었습니다`);
+                      reject(e.id);
+                    }}
                     hitSlop={10}
                     style={styles.dismissBtn}
                   >
@@ -179,6 +186,9 @@ export default function CalendarScreen() {
           )}
         </View>
       </ScrollView>
+      {entry && (
+        <UndoSnackbar message={entry.message} onUndo={undo} onDismiss={dismiss} />
+      )}
     </SafeAreaView>
   );
 }

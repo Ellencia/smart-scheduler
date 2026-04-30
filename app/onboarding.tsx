@@ -8,6 +8,7 @@ import {
   AppState,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,6 +25,7 @@ interface PermItem {
   description: string;
   color: string;
   granted: boolean;
+  denied?: boolean;
   loading?: boolean;
 }
 
@@ -84,7 +86,11 @@ export default function OnboardingScreen() {
     setPerms((prev) =>
       prev.map((p) => {
         if (p.id === 'notif-access') return { ...p, granted: notifAccess === 'authorized' };
-        if (p.id === 'push') return { ...p, granted: pushPerm.status === 'granted' };
+        if (p.id === 'push') return {
+          ...p,
+          granted: pushPerm.status === 'granted',
+          denied: pushPerm.status === 'denied',
+        };
         if (p.id === 'google') return { ...p, granted: email !== null };
         return p;
       })
@@ -110,7 +116,12 @@ export default function OnboardingScreen() {
       if (id === 'notif-access') {
         RNAndroidNotificationListener.requestPermission();
       } else if (id === 'push') {
-        await Notifications.requestPermissionsAsync();
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status === 'denied') {
+          await Linking.openSettings();
+        } else {
+          await Notifications.requestPermissionsAsync();
+        }
         await refresh();
       } else if (id === 'google') {
         await signInWithGoogle();
@@ -169,6 +180,10 @@ export default function OnboardingScreen() {
               ) : p.granted ? (
                 <View style={styles.grantedBadge}>
                   <Text style={styles.grantedText}>✓ 허용됨</Text>
+                </View>
+              ) : p.denied ? (
+                <View style={styles.deniedBadge}>
+                  <Text style={styles.deniedText}>설정에서 허용</Text>
                 </View>
               ) : (
                 <Text style={styles.arrow}>›</Text>
@@ -279,6 +294,17 @@ const styles = StyleSheet.create({
   grantedText: {
     fontSize: 12,
     color: COLORS.success,
+    fontWeight: '600',
+  },
+  deniedBadge: {
+    backgroundColor: COLORS.dangerBg,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  deniedText: {
+    fontSize: 12,
+    color: COLORS.danger,
     fontWeight: '600',
   },
   arrow: { fontSize: 24, color: COLORS.faint },

@@ -10,6 +10,7 @@ import { getAppMeta } from '../../utils/sourceApps';
 
 interface Props {
   schedule: Schedule;
+  onReject?: (id: string) => void;
 }
 
 function fmtTime(iso: string): string {
@@ -55,11 +56,10 @@ function SourceBadge({ packageName }: { packageName: string }) {
   );
 }
 
-export function NotificationCard({ schedule }: Props) {
+export function NotificationCard({ schedule, onReject }: Props) {
   const router = useRouter();
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
   const reject = usePendingScheduleStore((s) => s.reject);
-
   const handleSync = () => {
     syncToCalendar(
       { schedule, onConflict: askConflict },
@@ -109,7 +109,7 @@ export function NotificationCard({ schedule }: Props) {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.btnSecondary}
-          onPress={() => reject(schedule.id)}
+          onPress={() => { reject(schedule.id); onReject?.(schedule.id); }}
         >
           <Text style={styles.btnSecondaryText}>무시</Text>
         </TouchableOpacity>

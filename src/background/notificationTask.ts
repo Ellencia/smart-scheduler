@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractScheduleFromText } from '../services/gemini';
 import { usePendingScheduleStore } from '../stores/pendingScheduleStore';
+import type { Schedule } from '../types/schedule';
 
 const TARGET_APPS = new Set([
   'com.kakao.talk',                    // 카카오톡
@@ -35,23 +37,39 @@ function hasScheduleKeyword(text: string): boolean {
   return SCHEDULE_KEYWORDS.some((kw) => text.includes(kw));
 }
 
-// 같은 출처/내용의 알림이 최근 N분 내에 이미 처리됐는지 확인 (Gemini 호출 전)
+// HeadlessJS 컨텍스트에서는 Zustand store가 hydrate되지 않으므로
+// AsyncStorage를 직접 읽어야 실제 저장된 일정 목록에 접근할 수 있음
+const STORE_KEY = 'pending-schedules';
 const DEDUP_WINDOW_MS = 10 * 60 * 1000;
 
-function isDuplicateText(sourceApp: string, sourceText: string): boolean {
-  const all = usePendingScheduleStore.getState().pendingSchedules;
+async function getStoredSchedules(): Promise<Schedule[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.pendingSchedules ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// 같은 출처/내용의 알림이 이미 처리됐는지 확인 (Gemini 호출 전)
+async function isDuplicateText(sourceApp: string, sourceText: string): Promise<boolean> {
+  const all = await getStoredSchedules();
   const cutoff = Date.now() - DEDUP_WINDOW_MS;
   return all.some(
     (s) =>
       s.sourceApp === sourceApp &&
       s.sourceText === sourceText &&
-      new Date(s.createdAt).getTime() > cutoff
+      // 이미 캘린더에 등록된 일정: 시간 무관하게 영구 차단
+      // pending 일정: 10분 창 내에서만 차단 (알림 갱신/재전송 중복 방지)
+      (s.status === 'synced' || s.status === 'confirmed' || new Date(s.createdAt).getTime() > cutoff)
   );
 }
 
-// 추출된 제목+날짜+시간이 이미 스토어에 존재하는지 확인 (Gemini 호출 후)
-function isDuplicateSchedule(title: string, date: string, time: string): boolean {
-  const all = usePendingScheduleStore.getState().pendingSchedules;
+// 추출된 제목+날짜+시간이 이미 존재하는지 확인 (Gemini 호출 후)
+async function isDuplicateSchedule(title: string, date: string, time: string): Promise<boolean> {
+  const all = await getStoredSchedules();
   return all.some(
     (s) =>
       s.title === title &&
@@ -97,8 +115,8 @@ export default async function notificationTask(payload: HeadlessPayload) {
     }
 
     // [1단계] 중복 알림 차단 — 같은 메시지가 갱신/재전송돼도 한 번만 처리
-    if (isDuplicateText(notification.app, notification.text)) {
-      console.log('[NotificationTask] skipped — duplicate text within 10 min');
+    if (await isDuplicateText(notification.app, notification.text)) {
+      console.log('[NotificationTask] skipped — duplicate text');
       return;
     }
 
@@ -116,7 +134,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
     }
 
     // [2단계] 같은 제목+날짜+시간 일정이 이미 존재하면 스킵
-    if (isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
+    if (await isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
       console.log('[NotificationTask] skipped — schedule already exists:', extracted.title, extracted.date, extracted.time);
       return;
     }

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,19 +7,31 @@ import {
   Alert,
   ScrollView,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import RNAndroidNotificationListener from 'react-native-android-notification-listener';
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import {
   signInWithGoogle,
   signOutFromGoogle,
   getCurrentUserEmail,
 } from '../../src/services/googleAuth';
+import { extractScheduleFromText } from '../../src/services/gemini';
+import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { useAppStore, REMINDER_OPTIONS, type ReminderMinutes } from '../../src/stores/appStore';
 import { COLORS, RADIUS } from '../../src/theme/colors';
+
+const DEV_TAP_REQUIRED = 7;
+
+const TEST_MESSAGES = [
+  '내일 오후 3시에 강남역 스타벅스에서 팀 미팅 있어요!',
+  '이번 주 금요일 저녁 7시에 홍대 고기집에서 회식합니다',
+  '다음주 월요일 오전 10시 병원 예약 잡혔어요',
+];
 
 function SectionLabel({ label }: { label: string }) {
   return <Text style={styles.sectionLabel}>{label}</Text>;
@@ -75,13 +87,61 @@ export default function SettingsScreen() {
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
   const reminderMinutes = useAppStore((s) => s.reminderMinutes);
   const setReminderMinutes = useAppStore((s) => s.setReminderMinutes);
+  const addPending = usePendingScheduleStore((s) => s.addPending);
   const [email, setEmail] = useState<string | null>(null);
   const [kakaoOn, setKakaoOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
+  const [devTaps, setDevTaps] = useState(0);
+  const [devUnlocked, setDevUnlocked] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentReminderLabel =
     REMINDER_OPTIONS.find((o) => o.value === reminderMinutes)?.label ?? '10분 전';
+
+  const handleVersionTap = () => {
+    if (devUnlocked) return;
+    const next = devTaps + 1;
+    setDevTaps(next);
+    if (devTapTimer.current) clearTimeout(devTapTimer.current);
+    if (next >= DEV_TAP_REQUIRED) {
+      setDevUnlocked(true);
+      setDevTaps(0);
+      Alert.alert('🛠️ 개발자 모드', '개발자 도구가 활성화되었습니다.');
+    } else if (next >= DEV_TAP_REQUIRED - 3) {
+      devTapTimer.current = setTimeout(() => setDevTaps(0), 2000);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) return Alert.alert('오류', 'Gemini API 키가 없습니다.');
+    setTestLoading(true);
+    try {
+      const text = TEST_MESSAGES[Math.floor(Math.random() * TEST_MESSAGES.length)];
+      const extracted = await extractScheduleFromText(text, apiKey);
+      if (!extracted) return Alert.alert('결과 없음', '일정을 추출하지 못했습니다.');
+      const pendingId = addPending({
+        ...extracted,
+        sourceApp: 'dev.test',
+        sourceText: text,
+      });
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `[테스트] 일정 감지됨: ${extracted.title}`,
+          body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
+          data: { pendingId },
+        },
+        trigger: { channelId: 'schedule-detected' } as any,
+      });
+      Alert.alert('테스트 완료', `"${text}"\n\n→ ${extracted.title} (${extracted.date} ${extracted.time})`);
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? String(e));
+    } finally {
+      setTestLoading(false);
+    }
+  };
 
   const refresh = useCallback(async () => {
     setEmail(await getCurrentUserEmail());
@@ -241,6 +301,57 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.activeText}>사용중</Text>
         </View>
+
+        {/* 버전 — 7회 탭 시 개발자 모드 해제 */}
+        <TouchableOpacity onPress={handleVersionTap} style={styles.versionRow} activeOpacity={0.6}>
+          <Text style={styles.versionText}>버전 1.0.0</Text>
+          {devTaps > 0 && !devUnlocked && (
+            <Text style={styles.versionHint}>{DEV_TAP_REQUIRED - devTaps}번 더 탭</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* 개발자 도구 */}
+        {devUnlocked && (
+          <>
+            <SectionLabel label="🛠️ 개발자 도구" />
+            <TouchableOpacity
+              style={styles.card}
+              onPress={handleTestNotification}
+              disabled={testLoading}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconBox, { backgroundColor: '#1a2a1a' }]}>
+                <Ionicons name="flask-outline" size={18} color={COLORS.success} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>테스트 알림 전송</Text>
+                <Text style={styles.cardSub}>샘플 메시지 → Gemini → 카드+푸시</Text>
+              </View>
+              {testLoading
+                ? <ActivityIndicator size="small" color={COLORS.success} />
+                : <Ionicons name="play" size={16} color={COLORS.success} />
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => {
+                resetOnboarding();
+                router.replace('/onboarding');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconBox, { backgroundColor: '#1a1a2a' }]}>
+                <Ionicons name="refresh-outline" size={18} color={COLORS.accent} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>온보딩 다시 보기</Text>
+                <Text style={styles.cardSub}>온보딩 화면으로 이동</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -324,6 +435,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   activeText: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
+
+  // 버전
+  versionRow: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 4,
+  },
+  versionText: { fontSize: 12, color: COLORS.faint },
+  versionHint: { fontSize: 11, color: COLORS.muted },
 
   // 알림 설정 뱃지
   reminderBadge: {

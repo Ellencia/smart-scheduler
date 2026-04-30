@@ -21,6 +21,9 @@ export class CalendarCancelled extends Error {
   }
 }
 
+// 모듈 레벨 전역 락 — 어느 컴포넌트에서 호출해도 동시에 하나만 실행됨
+let syncLock = false;
+
 export function useCalendarSync() {
   const confirm = usePendingScheduleStore((s) => s.confirm);
   const markSynced = usePendingScheduleStore((s) => s.markSynced);
@@ -28,22 +31,25 @@ export function useCalendarSync() {
 
   return useMutation({
     mutationFn: async ({ schedule, onConflict }: SyncParams) => {
-      const token = await getStoredToken();
-      if (!token) throw new Error('로그인이 필요합니다.');
+      if (syncLock) throw new CalendarCancelled();
+      syncLock = true;
+      try {
+        const token = await getStoredToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
 
-      // 1. 같은 시간대 기존 일정 조회
-      const conflicts = await listConflictingEvents(schedule.date, schedule.time, token);
+        const conflicts = await listConflictingEvents(schedule.date, schedule.time, token);
 
-      // 2. 충돌 있으면 사용자 확인
-      if (conflicts.length > 0 && onConflict) {
-        const proceed = await onConflict(conflicts);
-        if (!proceed) throw new CalendarCancelled();
+        if (conflicts.length > 0 && onConflict) {
+          const proceed = await onConflict(conflicts);
+          if (!proceed) throw new CalendarCancelled();
+        }
+
+        confirm(schedule.id);
+        const calendarEventId = await createCalendarEvent(schedule, token, reminderMinutes);
+        return { scheduleId: schedule.id, calendarEventId };
+      } finally {
+        syncLock = false;
       }
-
-      // 3. 등록
-      confirm(schedule.id);
-      const calendarEventId = await createCalendarEvent(schedule, token, reminderMinutes);
-      return { scheduleId: schedule.id, calendarEventId };
     },
     onSuccess: ({ scheduleId, calendarEventId }) => {
       markSynced(scheduleId, calendarEventId);

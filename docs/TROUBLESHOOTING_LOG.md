@@ -480,3 +480,109 @@ Stage 4 검증 중 가장 큰 벽. Google이 2024~2025년에 OAuth 보안 정책
 | 18 | **Google OAuth는 `expo-auth-session`보다 네이티브 SDK가 안정적** — 정책 변경에 자동 대응. 특히 native build(EAS)에선 `@react-native-google-signin/google-signin` 권장 |
 | 19 | **Custom URI scheme은 deprecated 가는 추세** — 2024년 이후 Google/Apple 모두 보안 강화로 점진적 차단. 신규 프로젝트는 처음부터 네이티브 SDK 또는 Universal Links 고려 |
 | 20 | **OAuth 클라이언트 유형마다 redirect URI 정책이 다름** — Web 클라이언트는 https만, Android 클라이언트도 신규는 custom scheme 금지. 두 클라이언트를 조합해도 한쪽 제약을 우회할 순 없음 |
+
+---
+
+## 16. 충돌 경고창 두 번 팝업 버그
+
+### 16-1. 증상
+
+캘린더 등록 버튼을 한 번 눌렀을 때 "시간 겹침 알림" 경고창이 연속으로 두 번 나타남.
+
+### 16-2. 원인 추적 과정
+
+#### 잘못 추정한 원인 — 터치 투과
+
+`transparentModal` 특성상 아래 `NotificationCard`의 버튼까지 터치가 전달되어 두 개의 `useCalendarSync`가 동시 실행된다고 판단 → `useRef` 가드 및 모듈 레벨 `syncLock` 추가했으나 효과 없음.
+
+#### 실제 원인 — TanStack Query `mutations.retry: 1`
+
+`src/utils/queryClient.ts`에 아래 설정이 있었음:
+
+```ts
+defaultOptions: {
+  mutations: {
+    retry: 1,  // ← 원인
+  },
+}
+```
+
+흐름:
+
+1. 버튼 누름 → `mutationFn` 실행 → 충돌 감지 → **경고창 1회**
+2. 사용자가 "취소" 탭 → `CalendarCancelled` throw
+3. TanStack Query가 이를 **에러로 인식** → `retry: 1` 설정에 따라 자동 재시도
+4. `mutationFn` 재실행 → 충돌 재감지 → **경고창 2회**
+
+### 16-3. 해결
+
+```ts
+// src/utils/queryClient.ts
+mutations: {
+  retry: 0,  // 뮤테이션은 재시도 없음
+},
+```
+
+### 16-4. 교훈
+
+| # | 교훈 |
+| --- | --- |
+| 21 | **`useMutation`의 retry 기본값은 0이지만 `QueryClient` 전역 설정으로 재정의될 수 있음** — 사용자 취소(CalendarCancelled)도 에러로 분류되어 retry 대상이 됨 |
+| 22 | **증상이 "두 번 실행"처럼 보일 때 retry 설정을 먼저 확인** — 터치 이벤트나 렌더링 문제보다 쿼리 설정이 원인인 경우가 많음 |
+| 23 | **`QueryClient` 전역 defaultOptions는 모든 mutation에 영향** — 의도한 곳 외에 부작용이 생기지 않도록 queries/mutations를 분리해서 설정할 것 |
+
+---
+
+## 17. 알림 중복 감지 미작동 버그
+
+### 17-1. 증상
+
+같은 내용의 알림을 반복해서 보내면 캘린더에 등록된 일정이든 알림 탭의 pending 카드든 관계없이 매번 새 카드가 생성됨.
+
+### 17-2. 원인
+
+`notificationTask.ts`의 `isDuplicateText`, `isDuplicateSchedule` 함수가 `usePendingScheduleStore.getState()`로 중복 여부를 판단하고 있었음.
+
+`notificationTask`는 `AppRegistry.registerHeadlessTask`로 등록된 **HeadlessJS 태스크**로, 앱의 UI와 **완전히 분리된 별개의 JS 컨텍스트**에서 실행됨. 이 컨텍스트에서 Zustand store는 새로 생성된 빈 상태로 시작되며, `persist` 미들웨어가 AsyncStorage에서 데이터를 로드하는 hydration은 **비동기**이기 때문에 중복 체크 시점에는 hydration이 완료되지 않아 항상 빈 배열을 반환함.
+
+결과적으로 중복 체크가 매번 `false`를 반환하여 모든 알림이 통과됨.
+
+### 17-3. 해결
+
+HeadlessJS 컨텍스트에서는 Zustand store 대신 **AsyncStorage를 직접 읽도록** 변경. Zustand persist 미들웨어의 저장 포맷(`{ state: { pendingSchedules: [...] } }`)을 직접 파싱.
+
+```ts
+// src/background/notificationTask.ts
+
+async function getStoredSchedules(): Promise<Schedule[]> {
+  try {
+    const raw = await AsyncStorage.getItem('pending-schedules');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.pendingSchedules ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function isDuplicateText(sourceApp: string, sourceText: string): Promise<boolean> {
+  const all = await getStoredSchedules();
+  const cutoff = Date.now() - DEDUP_WINDOW_MS;
+  return all.some(
+    (s) =>
+      s.sourceApp === sourceApp &&
+      s.sourceText === sourceText &&
+      (s.status === 'synced' || s.status === 'confirmed' || new Date(s.createdAt).getTime() > cutoff)
+  );
+}
+```
+
+또한 기존에는 10분 창(`DEDUP_WINDOW_MS`) 내에서만 중복을 차단했는데, 이미 `synced`/`confirmed` 상태인 일정의 원본 텍스트는 시간 무관하게 영구 차단하도록 조건 추가.
+
+### 17-4. 교훈
+
+| # | 교훈 |
+| --- | --- |
+| 24 | **HeadlessJS 태스크는 앱과 별개의 JS 컨텍스트** — `usePendingScheduleStore.getState()` 같은 앱 전역 상태에 접근할 수 없음. store는 항상 초기(빈) 상태로 시작됨 |
+| 25 | **Zustand persist의 hydration은 비동기** — background task에서 store를 읽어야 한다면 `AsyncStorage.getItem`으로 직접 읽고 Zustand의 저장 포맷(`{ state: { ... } }`)을 직접 파싱할 것 |
+| 26 | **중복 감지 로직의 시간 창(window)이 있으면 그 밖의 경우는 무방비** — 이미 처리 완료된(`synced`) 일정은 시간 무관하게 영구 차단해야 함 |

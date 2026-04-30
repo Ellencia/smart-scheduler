@@ -3,6 +3,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { NotificationCard } from '../../src/components/notifications/NotificationCard';
+import { UndoSnackbar } from '../../src/components/UndoSnackbar';
+import { useUndoSnackbar } from '../../src/hooks/useUndoSnackbar';
 import { COLORS, RADIUS } from '../../src/theme/colors';
 
 function Header({ count }: { count: number }) {
@@ -41,19 +43,28 @@ function EmptyState() {
 export default function HomeScreen() {
   const allSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
   const pendingSchedules = allSchedules.filter((x) => x.status === 'pending');
+  const { entry, show, undo, dismiss } = useUndoSnackbar();
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <FlatList
         data={pendingSchedules}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <NotificationCard schedule={item} />}
+        renderItem={({ item }) => (
+          <NotificationCard
+            schedule={item}
+            onReject={(id) => show(id, 'pending')}
+          />
+        )}
         ListHeaderComponent={<Header count={pendingSchedules.length} />}
         ListEmptyComponent={<EmptyState />}
         contentContainerStyle={
           pendingSchedules.length === 0 ? styles.emptyContent : styles.list
         }
       />
+      {entry && (
+        <UndoSnackbar message={entry.message} onUndo={undo} onDismiss={dismiss} />
+      )}
     </SafeAreaView>
   );
 }

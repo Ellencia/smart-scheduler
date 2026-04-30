@@ -32,6 +32,7 @@ export const usePendingScheduleStore = create<PendingScheduleState>()(
           status: 'pending',
           sourceApp: event.sourceApp,
           sourceText: event.sourceText,
+          confidence: event.confidence,
           createdAt: now,
           updatedAt: now,
         };

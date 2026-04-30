@@ -31,12 +31,18 @@ interface AppState {
   theme: ThemeMode;
   sourceSettings: SourceSettings;
   autoSync: boolean;
+  autoSyncMinConfidence: number;
+  autoSyncRequireLocation: boolean;
+  ignoredKeywords: string[];
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   setReminderMinutes: (v: ReminderMinutes) => void;
   setTheme: (v: ThemeMode) => void;
   setSourceEnabled: (source: NotificationSource, enabled: boolean) => void;
   setAutoSync: (v: boolean) => void;
+  setAutoSyncMinConfidence: (v: number) => void;
+  setAutoSyncRequireLocation: (v: boolean) => void;
+  setIgnoredKeywords: (v: string[]) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -47,6 +53,9 @@ export const useAppStore = create<AppState>()(
       theme: 'system',
       sourceSettings: DEFAULT_SOURCE_SETTINGS,
       autoSync: false,
+      autoSyncMinConfidence: 0.75,
+      autoSyncRequireLocation: false,
+      ignoredKeywords: [],
       completeOnboarding: () => set({ onboardingCompleted: true }),
       resetOnboarding: () => set({ onboardingCompleted: false }),
       setReminderMinutes: (v) => set({ reminderMinutes: v }),
@@ -56,6 +65,9 @@ export const useAppStore = create<AppState>()(
           sourceSettings: { ...state.sourceSettings, [source]: enabled },
         })),
       setAutoSync: (v) => set({ autoSync: v }),
+      setAutoSyncMinConfidence: (v) => set({ autoSyncMinConfidence: v }),
+      setAutoSyncRequireLocation: (v) => set({ autoSyncRequireLocation: v }),
+      setIgnoredKeywords: (v) => set({ ignoredKeywords: v }),
     }),
     {
       name: 'app-state',

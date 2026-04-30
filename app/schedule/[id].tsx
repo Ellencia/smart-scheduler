@@ -68,17 +68,19 @@ function DateField({
   label,
   value,
   onPress,
+  disabled,
   colors,
   styles,
 }: {
   label: string;
   value: string;
   onPress: () => void;
+  disabled?: boolean;
   colors: AppColors;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7} disabled={disabled}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={styles.pickerBtn}>
         <Ionicons name="calendar-outline" size={16} color={colors.muted} />
@@ -92,17 +94,19 @@ function TimeField({
   label,
   value,
   onPress,
+  disabled,
   colors,
   styles,
 }: {
   label: string;
   value: string;
   onPress: () => void;
+  disabled?: boolean;
   colors: AppColors;
   styles: ReturnType<typeof makeStyles>;
 }) {
   return (
-    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.field} onPress={onPress} activeOpacity={0.7} disabled={disabled}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={styles.pickerBtn}>
         <Ionicons name="time-outline" size={16} color={colors.muted} />
@@ -140,6 +144,8 @@ export default function ScheduleDetailScreen() {
       </View>
     );
   }
+
+  const isSynced = schedule.status === 'synced';
 
   const validate = (): string | null => {
     if (!title.trim()) return '제목을 입력해주세요.';
@@ -191,7 +197,7 @@ export default function ScheduleDetailScreen() {
           <View style={styles.handle} />
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>일정 확인 및 수정</Text>
+            <Text style={styles.headerTitle}>{isSynced ? '등록된 일정' : '일정 확인 및 수정'}</Text>
             <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
               <Ionicons name="close" size={22} color={colors.muted} />
             </TouchableOpacity>
@@ -205,6 +211,19 @@ export default function ScheduleDetailScreen() {
               "{schedule.sourceText}"
             </Text>
           </View>
+
+          {schedule.processingNote && (
+            <View style={styles.statusBox}>
+              <Ionicons
+                name={isSynced ? 'checkmark-circle-outline' : 'information-circle-outline'}
+                size={17}
+                color={isSynced ? colors.success : colors.accent}
+              />
+              <Text style={[styles.statusText, isSynced && { color: colors.success }]}>
+                {schedule.processingNote}
+              </Text>
+            </View>
+          )}
 
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -222,6 +241,7 @@ export default function ScheduleDetailScreen() {
                   placeholderTextColor={colors.faint}
                   style={styles.inputText}
                   returnKeyType="next"
+                  editable={!isSynced}
                 />
               </View>
             </View>
@@ -232,6 +252,7 @@ export default function ScheduleDetailScreen() {
                   label="날짜"
                   value={date}
                   onPress={() => setShowDatePicker(true)}
+                  disabled={isSynced}
                   colors={colors}
                   styles={styles}
                 />
@@ -241,6 +262,7 @@ export default function ScheduleDetailScreen() {
                   label="시간"
                   value={time}
                   onPress={() => setShowTimePicker(true)}
+                  disabled={isSynced}
                   colors={colors}
                   styles={styles}
                 />
@@ -258,6 +280,7 @@ export default function ScheduleDetailScreen() {
                   placeholderTextColor={colors.faint}
                   style={styles.inputText}
                   returnKeyType="done"
+                  editable={!isSynced}
                 />
               </View>
             </View>
@@ -271,24 +294,32 @@ export default function ScheduleDetailScreen() {
             </View>
           )}
 
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.btnSecondary} onPress={handleSaveOnly} disabled={isPending || syncSucceeded}>
-              <Text style={styles.btnSecondaryText}>수정만 저장</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.btnPrimary, (isPending || syncSucceeded) && styles.btnDisabled]}
-              onPress={handleSync}
-              disabled={isPending || syncSucceeded}
-            >
-              {syncSucceeded ? (
-                <Ionicons name="checkmark" size={20} color={colors.success} />
-              ) : isPending ? (
-                <ActivityIndicator color={colors.accent} />
-              ) : (
-                <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+          {isSynced ? (
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => router.back()}>
+                <Text style={styles.btnPrimaryText}>닫기</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.btnSecondary} onPress={handleSaveOnly} disabled={isPending || syncSucceeded}>
+                <Text style={styles.btnSecondaryText}>수정만 저장</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnPrimary, (isPending || syncSucceeded) && styles.btnDisabled]}
+                onPress={handleSync}
+                disabled={isPending || syncSucceeded}
+              >
+                {syncSucceeded ? (
+                  <Ionicons name="checkmark" size={20} color={colors.success} />
+                ) : isPending ? (
+                  <ActivityIndicator color={colors.accent} />
+                ) : (
+                  <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </Pressable>
       </KeyboardAvoidingView>
 
@@ -377,6 +408,19 @@ function makeStyles(c: AppColors) {
     },
     sourceLetterText: { fontSize: 12, fontWeight: '800' },
     rawText: { flex: 1, fontSize: 13, color: c.muted, fontStyle: 'italic', lineHeight: 19 },
+    statusBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 14,
+    },
+    statusText: { flex: 1, fontSize: 13, color: c.accent, lineHeight: 18 },
     scrollContent: { gap: 14, paddingBottom: 12 },
     row: { flexDirection: 'row', gap: 12 },
     field: { gap: 6 },

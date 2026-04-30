@@ -56,20 +56,35 @@ interface AppSettings {
   sourceSettings: SourceSettings;
   reminderMinutes: ReminderMinutes;
   autoSync: boolean;
+  autoSyncMinConfidence: number;
+  autoSyncRequireLocation: boolean;
+  ignoredKeywords: string[];
 }
+
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  sourceSettings: DEFAULT_SOURCE_SETTINGS,
+  reminderMinutes: 10,
+  autoSync: false,
+  autoSyncMinConfidence: 0.75,
+  autoSyncRequireLocation: false,
+  ignoredKeywords: [],
+};
 
 async function getAppSettings(): Promise<AppSettings> {
   try {
     const raw = await AsyncStorage.getItem(APP_STATE_KEY);
-    if (!raw) return { sourceSettings: DEFAULT_SOURCE_SETTINGS, reminderMinutes: 10, autoSync: false };
+    if (!raw) return DEFAULT_APP_SETTINGS;
     const parsed = JSON.parse(raw);
     return {
       sourceSettings: { ...DEFAULT_SOURCE_SETTINGS, ...parsed?.state?.sourceSettings },
       reminderMinutes: parsed?.state?.reminderMinutes ?? 10,
       autoSync: parsed?.state?.autoSync ?? false,
+      autoSyncMinConfidence: parsed?.state?.autoSyncMinConfidence ?? 0.75,
+      autoSyncRequireLocation: parsed?.state?.autoSyncRequireLocation ?? false,
+      ignoredKeywords: parsed?.state?.ignoredKeywords ?? [],
     };
   } catch {
-    return { sourceSettings: DEFAULT_SOURCE_SETTINGS, reminderMinutes: 10, autoSync: false };
+    return DEFAULT_APP_SETTINGS;
   }
 }
 
@@ -86,6 +101,15 @@ async function saveScheduleToStorage(schedule: Schedule): Promise<void> {
   const existing: Schedule[] = parsed?.state?.pendingSchedules ?? [];
   parsed.state.pendingSchedules = [schedule, ...existing];
   await AsyncStorage.setItem(STORE_KEY, JSON.stringify(parsed));
+}
+
+function isIgnoredText(text: string, keywords: string[]): string | null {
+  const normalized = text.toLowerCase();
+  return keywords.find((kw) => normalized.includes(kw.toLowerCase())) ?? null;
+}
+
+function normalizeForDuplicate(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, '').replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 async function getStoredSchedules(): Promise<Schedule[]> {
@@ -115,12 +139,13 @@ async function isDuplicateText(sourceApp: string, sourceText: string): Promise<b
 
 // 추출된 제목+날짜+시간이 이미 존재하는지 확인 (Gemini 호출 후)
 async function isDuplicateSchedule(title: string, date: string, time: string): Promise<boolean> {
+  const normalizedTitle = normalizeForDuplicate(title);
   const all = await getStoredSchedules();
   return all.some(
     (s) =>
-      s.title === title &&
       s.date === date &&
       s.time === time &&
+      normalizeForDuplicate(s.title) === normalizedTitle &&
       s.status !== 'rejected'
   );
 }
@@ -158,6 +183,11 @@ export default async function notificationTask(payload: HeadlessPayload) {
     }
     if (!notification.text || notification.text.length < 5) {
       console.log('[NotificationTask] skipped — text too short');
+      return;
+    }
+    const ignoredKeyword = isIgnoredText(notification.text, appSettings.ignoredKeywords);
+    if (ignoredKeyword) {
+      console.log('[NotificationTask] skipped — ignored keyword:', ignoredKeyword);
       return;
     }
 
@@ -204,22 +234,63 @@ export default async function notificationTask(payload: HeadlessPayload) {
       status: 'pending',
       sourceApp: notification.app,
       sourceText: notification.text,
+      confidence: extracted.confidence,
       createdAt: now,
       updatedAt: now,
     };
 
     // 자동등록 ON: 캘린더에 바로 등록, 실패 시 pending으로 폴백
     if (appSettings.autoSync) {
+      if (extracted.confidence < appSettings.autoSyncMinConfidence) {
+        await saveScheduleToStorage({
+          ...baseSchedule,
+          processingNote: `자동등록 보류: 신뢰도 ${Math.round(extracted.confidence * 100)}%`,
+        });
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `확인 필요: ${extracted.title}`,
+            body: 'AI 신뢰도가 자동등록 기준보다 낮습니다.',
+            data: { pendingId: scheduleId },
+          },
+          trigger: { channelId: 'schedule-detected' } as any,
+        });
+        console.log('[NotificationTask] autoSync held — low confidence:', extracted.confidence);
+        return;
+      }
+
+      if (appSettings.autoSyncRequireLocation && !extracted.location) {
+        await saveScheduleToStorage({
+          ...baseSchedule,
+          processingNote: '자동등록 보류: 장소 정보 없음',
+        });
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `확인 필요: ${extracted.title}`,
+            body: '장소 정보가 없어 자동등록하지 않았습니다.',
+            data: { pendingId: scheduleId },
+          },
+          trigger: { channelId: 'schedule-detected' } as any,
+        });
+        console.log('[NotificationTask] autoSync held — missing location');
+        return;
+      }
+
       const token = await getStoredToken();
       if (token) {
         try {
           const calendarEventId = await createCalendarEvent(baseSchedule, token, appSettings.reminderMinutes);
-          await saveScheduleToStorage({ ...baseSchedule, status: 'synced', calendarEventId, updatedAt: new Date() });
+          await saveScheduleToStorage({
+            ...baseSchedule,
+            status: 'synced',
+            calendarEventId,
+            processingNote: '자동등록 완료',
+            updatedAt: new Date(),
+          });
           await Notifications.scheduleNotificationAsync({
             content: {
               title: `캘린더에 등록됨: ${extracted.title}`,
               body: `${extracted.date} ${extracted.time}${extracted.location ? ` • ${extracted.location}` : ''}`,
-              data: {},
+              data: { scheduleId },
             },
             trigger: { channelId: 'schedule-detected' } as any,
           });
@@ -227,9 +298,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
           return;
         } catch (err) {
           console.error('[NotificationTask] autoSync failed, falling back to pending:', err);
+          baseSchedule.processingNote =
+            err instanceof Error ? `자동등록 실패: ${err.message}` : '자동등록 실패';
         }
       } else {
         console.log('[NotificationTask] autoSync skipped — no token, falling back to pending');
+        baseSchedule.processingNote = '자동등록 보류: Google 로그인이 필요합니다';
       }
     }
 

@@ -60,10 +60,11 @@ export default function RootLayout() {
 
     const subscription = Notifications.addNotificationResponseReceivedListener(
       async (response) => {
-        const pendingId = response.notification.request.content.data?.pendingId;
-        if (pendingId) {
+        const data = response.notification.request.content.data;
+        const scheduleId = data?.pendingId ?? data?.scheduleId;
+        if (scheduleId) {
           await usePendingScheduleStore.persist.rehydrate();
-          router.push(`/schedule/${pendingId}`);
+          router.push(`/schedule/${scheduleId}`);
         }
       }
     );

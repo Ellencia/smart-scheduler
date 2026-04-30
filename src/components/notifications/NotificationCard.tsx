@@ -163,6 +163,16 @@ export function NotificationCard({ schedule, onReject, onSuccess }: Props) {
             <Pill icon="📌" label={schedule.title} />
           </View>
 
+          {(schedule.processingNote || schedule.confidence !== undefined) && (
+            <View style={styles.noteBox}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.accent} />
+              <Text style={styles.noteText} numberOfLines={2}>
+                {schedule.processingNote ??
+                  `AI 신뢰도 ${Math.round((schedule.confidence ?? 0) * 100)}%`}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.actions}>
             <TouchableOpacity
               style={[styles.btnPrimary, isPending && styles.btnDisabled]}
@@ -237,6 +247,18 @@ function makeStyles(c: AppColors) {
     },
     pillIcon: { fontSize: 13 },
     pillText: { fontSize: 13, color: c.accent, fontWeight: '500' },
+    noteBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      backgroundColor: c.accentBg,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.accentDim,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    noteText: { flex: 1, fontSize: 12, color: c.accent, lineHeight: 17 },
     actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
     btnPrimary: {
       flex: 1, paddingVertical: 12, borderRadius: RADIUS.md,

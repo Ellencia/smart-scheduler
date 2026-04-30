@@ -8,6 +8,7 @@ import {
   ScrollView,
   Switch,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -38,6 +39,12 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
   { value: 'dark', label: '다크', icon: 'moon' },
   { value: 'light', label: '라이트', icon: 'sunny' },
   { value: 'system', label: '시스템', icon: 'phone-portrait' },
+];
+
+const CONFIDENCE_OPTIONS = [
+  { value: 0.6, label: '보통' },
+  { value: 0.75, label: '높음' },
+  { value: 0.9, label: '매우 높음' },
 ];
 
 function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typeof makeStyles> }) {
@@ -104,16 +111,48 @@ export default function SettingsScreen() {
   const setSourceEnabled = useAppStore((s) => s.setSourceEnabled);
   const autoSync = useAppStore((s) => s.autoSync);
   const setAutoSync = useAppStore((s) => s.setAutoSync);
+  const autoSyncMinConfidence = useAppStore((s) => s.autoSyncMinConfidence);
+  const setAutoSyncMinConfidence = useAppStore((s) => s.setAutoSyncMinConfidence);
+  const autoSyncRequireLocation = useAppStore((s) => s.autoSyncRequireLocation);
+  const setAutoSyncRequireLocation = useAppStore((s) => s.setAutoSyncRequireLocation);
+  const ignoredKeywords = useAppStore((s) => s.ignoredKeywords);
+  const setIgnoredKeywords = useAppStore((s) => s.setIgnoredKeywords);
   const addPending = usePendingScheduleStore((s) => s.addPending);
   const [email, setEmail] = useState<string | null>(null);
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [devTaps, setDevTaps] = useState(0);
   const [devUnlocked, setDevUnlocked] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
+  const [ignoredKeywordInput, setIgnoredKeywordInput] = useState(() => ignoredKeywords.join(', '));
   const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentReminderLabel =
     REMINDER_OPTIONS.find((o) => o.value === reminderMinutes)?.label ?? '10분 전';
+
+  const handleAutoSyncToggle = (enabled: boolean) => {
+    if (!enabled) {
+      setAutoSync(false);
+      return;
+    }
+
+    Alert.alert(
+      '자동 등록 켜기',
+      '확인 없이 Google Calendar에 바로 등록됩니다. 실패하거나 조건을 만족하지 못하면 알림 탭에 확인 카드가 생성됩니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        { text: '켜기', onPress: () => setAutoSync(true) },
+      ]
+    );
+  };
+
+  const saveIgnoredKeywords = () => {
+    setIgnoredKeywords(
+      ignoredKeywordInput
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    );
+  };
 
   const handleVersionTap = () => {
     if (devUnlocked) return;
@@ -279,8 +318,68 @@ export default function SettingsScreen() {
           title="자동 등록"
           subtitle="감지 즉시 확인 없이 캘린더에 바로 등록"
           enabled={autoSync}
-          onToggle={setAutoSync}
+          onToggle={handleAutoSyncToggle}
         />
+        {autoSync && (
+          <View style={styles.optionBox}>
+            <View style={styles.optionHeader}>
+              <View>
+                <Text style={styles.optionTitle}>자동등록 기준</Text>
+                <Text style={styles.optionSub}>기준 미달 시 확인 카드로 전환</Text>
+              </View>
+            </View>
+            <View style={styles.segmentRow}>
+              {CONFIDENCE_OPTIONS.map((opt) => {
+                const selected = autoSyncMinConfidence === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.segmentBtn, selected && styles.segmentBtnSelected]}
+                    onPress={() => setAutoSyncMinConfidence(opt.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.optionRow}>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>장소 있는 일정만 자동등록</Text>
+                <Text style={styles.cardSub}>장소가 없으면 확인 카드로 전환</Text>
+              </View>
+              <Switch
+                value={autoSyncRequireLocation}
+                onValueChange={setAutoSyncRequireLocation}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor={colors.surface}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* 감지 제외 */}
+        <SectionLabel label="감지 제외" styles={styles} />
+        <View style={styles.inputCard}>
+          <View style={styles.modelIconBox}>
+            <Ionicons name="remove-circle-outline" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>무시 키워드</Text>
+            <Text style={styles.cardSub}>쉼표로 구분, 포함된 메시지는 감지하지 않음</Text>
+            <TextInput
+              value={ignoredKeywordInput}
+              onChangeText={setIgnoredKeywordInput}
+              onBlur={saveIgnoredKeywords}
+              placeholder="예: 광고, 배송, 쿠폰"
+              placeholderTextColor={colors.faint}
+              style={styles.keywordInput}
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
 
         {/* 캘린더 알림 */}
         <SectionLabel label="캘린더 알림" styles={styles} />
@@ -489,6 +588,67 @@ function makeStyles(c: AppColors) {
     pickerRowSelected: { backgroundColor: c.accentDim },
     pickerText: { fontSize: 15, color: c.text },
     pickerTextSelected: { color: c.accent, fontWeight: '600' },
+    optionBox: {
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      padding: 14,
+      gap: 12,
+      marginBottom: 8,
+    },
+    optionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    optionTitle: { fontSize: 14, fontWeight: '600', color: c.text },
+    optionSub: { fontSize: 12, color: c.muted, marginTop: 3 },
+    segmentRow: {
+      flexDirection: 'row',
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      overflow: 'hidden',
+    },
+    segmentBtn: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 9,
+    },
+    segmentBtnSelected: { backgroundColor: c.accentDim },
+    segmentText: { fontSize: 12, color: c.muted, fontWeight: '500' },
+    segmentTextSelected: { color: c.accent, fontWeight: '700' },
+    optionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingTop: 2,
+    },
+    inputCard: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      marginBottom: 8,
+      gap: 12,
+    },
+    keywordInput: {
+      marginTop: 8,
+      color: c.text,
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      fontSize: 13,
+    },
 
     // 테마 선택
     themeSelector: {

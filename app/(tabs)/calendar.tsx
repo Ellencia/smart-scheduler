@@ -243,6 +243,11 @@ export default function CalendarScreen() {
                       {e.location ? `${e.location} · ` : ''}{meta.label}
                     </Text>
                   </View>
+                  {e.status === 'synced' && (
+                    <View style={styles.syncedBadge}>
+                      <Text style={styles.syncedText}>등록됨</Text>
+                    </View>
+                  )}
                   <TouchableOpacity
                     onPress={(evt) => {
                       evt.stopPropagation();
@@ -350,6 +355,13 @@ function makeStyles(c: AppColors) {
     eventBody: { flex: 1, gap: 3 },
     eventTitle: { fontSize: 15, fontWeight: '600', color: c.text },
     eventSub: { fontSize: 12, color: c.muted },
+    syncedBadge: {
+      backgroundColor: c.successBg,
+      borderRadius: RADIUS.sm,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    syncedText: { fontSize: 11, color: c.success, fontWeight: '700' },
     dismissBtn: { padding: 4, alignItems: 'center', justifyContent: 'center' },
     emptyState: {
       alignItems: 'center',

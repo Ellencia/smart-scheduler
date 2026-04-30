@@ -1,10 +1,13 @@
+import { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCalendarSync, CalendarCancelled } from '../../hooks/useCalendarSync';
 import { usePendingScheduleStore } from '../../stores/pendingScheduleStore';
+import { useColors } from '../../hooks/useColors';
+import { RADIUS } from '../../theme/colors';
+import type { AppColors } from '../../theme/colors';
 import type { Schedule } from '../../types/schedule';
 import type { ConflictEvent } from '../../services/googleCalendar';
-import { COLORS, RADIUS } from '../../theme/colors';
 import { formatScheduleDateTime, formatTimeAgo } from '../../utils/format';
 import { getAppMeta } from '../../utils/sourceApps';
 
@@ -35,16 +38,20 @@ function askConflict(conflicts: ConflictEvent[]): Promise<boolean> {
   });
 }
 
-function Pill({ icon, label, color }: { icon: string; label: string; color?: string }) {
+function Pill({ icon, label }: { icon: string; label: string }) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.pill}>
       <Text style={styles.pillIcon}>{icon}</Text>
-      <Text style={[styles.pillText, color ? { color } : null]}>{label}</Text>
+      <Text style={styles.pillText}>{label}</Text>
     </View>
   );
 }
 
 function SourceBadge({ packageName }: { packageName: string }) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const meta = getAppMeta(packageName);
   return (
     <View style={styles.sourceWrap}>
@@ -58,8 +65,11 @@ function SourceBadge({ packageName }: { packageName: string }) {
 
 export function NotificationCard({ schedule, onReject }: Props) {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
   const reject = usePendingScheduleStore((s) => s.reject);
+
   const handleSync = () => {
     syncToCalendar(
       { schedule, onConflict: askConflict },
@@ -78,25 +88,21 @@ export function NotificationCard({ schedule, onReject }: Props) {
       onPress={() => router.push(`/schedule/${schedule.id}`)}
       activeOpacity={0.85}
     >
-      {/* 헤더: 출처 배지 + 수신 시각 */}
       <View style={styles.header}>
         <SourceBadge packageName={schedule.sourceApp} />
         <Text style={styles.timeAgo}>{formatTimeAgo(schedule.createdAt)}</Text>
       </View>
 
-      {/* 원본 메시지 */}
       <Text style={styles.original} numberOfLines={2}>
         "{schedule.sourceText}"
       </Text>
 
-      {/* AI 추출 칩 */}
       <View style={styles.pillRow}>
         <Pill icon="📅" label={formatScheduleDateTime(schedule.date, schedule.time)} />
         {schedule.location && <Pill icon="📍" label={schedule.location} />}
         <Pill icon="📌" label={schedule.title} />
       </View>
 
-      {/* 액션 */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={[styles.btnPrimary, isPending && styles.btnDisabled]}
@@ -118,77 +124,62 @@ export function NotificationCard({ schedule, onReject }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    padding: 16,
-    gap: 12,
-  },
-
-  // 헤더
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sourceWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sourceLetter: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sourceLetterText: { fontSize: 12, fontWeight: '800' },
-  sourceLabel: { fontSize: 13, color: COLORS.text, fontWeight: '500' },
-  timeAgo: { fontSize: 12, color: COLORS.faint },
-
-  // 원본
-  original: {
-    fontSize: 14,
-    color: COLORS.muted,
-    fontStyle: 'italic',
-    lineHeight: 21,
-  },
-
-  // 칩
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.surfaceAlt,
-    borderWidth: 0.5,
-    borderColor: COLORS.accentDim,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  pillIcon: { fontSize: 13 },
-  pillText: { fontSize: 13, color: COLORS.accent, fontWeight: '500' },
-
-  // 액션
-  actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  btnPrimary: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.accentDim,
-    alignItems: 'center',
-  },
-  btnPrimaryText: { color: COLORS.accent, fontWeight: '600', fontSize: 14 },
-  btnSecondary: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'transparent',
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-  },
-  btnSecondaryText: { color: COLORS.muted, fontWeight: '500', fontSize: 14 },
-  btnDisabled: { opacity: 0.5 },
-});
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.xl,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      padding: 16,
+      gap: 12,
+    },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    sourceWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    sourceLetter: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sourceLetterText: { fontSize: 12, fontWeight: '800' },
+    sourceLabel: { fontSize: 13, color: c.text, fontWeight: '500' },
+    timeAgo: { fontSize: 12, color: c.faint },
+    original: { fontSize: 14, color: c.muted, fontStyle: 'italic', lineHeight: 21 },
+    pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: c.surfaceAlt,
+      borderWidth: 0.5,
+      borderColor: c.accentDim,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    pillIcon: { fontSize: 13 },
+    pillText: { fontSize: 13, color: c.accent, fontWeight: '500' },
+    actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+    btnPrimary: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: RADIUS.md,
+      backgroundColor: c.accentDim,
+      alignItems: 'center',
+    },
+    btnPrimaryText: { color: c.accent, fontWeight: '600', fontSize: 14 },
+    btnSecondary: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: RADIUS.md,
+      backgroundColor: 'transparent',
+      borderWidth: 0.5,
+      borderColor: c.border,
+      alignItems: 'center',
+    },
+    btnSecondaryText: { color: c.muted, fontWeight: '500', fontSize: 14 },
+    btnDisabled: { opacity: 0.5 },
+  });
+}

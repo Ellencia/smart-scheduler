@@ -5,7 +5,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import { queryClient } from '../src/utils/queryClient';
 import { useAppStore } from '../src/stores/appStore';
-import { COLORS } from '../src/theme/colors';
+import { useColors } from '../src/hooks/useColors';
+import { DARK_COLORS } from '../src/theme/colors';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -17,17 +18,15 @@ Notifications.setNotificationHandler({
 });
 
 async function setupNotifications() {
-  // Android 8+ 채널 등록 — 채널 없으면 헤드리스에서 푸시 안 뜸
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('schedule-detected', {
       name: '일정 감지 알림',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: COLORS.accent,
+      lightColor: DARK_COLORS.accent,
     });
   }
 
-  // Android 13+ POST_NOTIFICATIONS 런타임 권한
   const { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') {
     await Notifications.requestPermissionsAsync();
@@ -37,8 +36,10 @@ async function setupNotifications() {
 export default function RootLayout() {
   const router = useRouter();
   const onboardingCompleted = useAppStore((s) => s.onboardingCompleted);
+  const colors = useColors();
+  const theme = useAppStore((s) => s.theme);
+  const isDark = colors === DARK_COLORS;
 
-  // 첫 실행이면 온보딩으로 강제 이동
   useEffect(() => {
     if (!onboardingCompleted) {
       router.replace('/onboarding');
@@ -48,7 +49,6 @@ export default function RootLayout() {
   useEffect(() => {
     setupNotifications();
 
-    // 푸시 알림 탭 시 → 해당 일정 상세 화면으로 이동
     const subscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const pendingId = response.notification.request.content.data?.pendingId;
@@ -63,13 +63,16 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.bg}
+      />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: COLORS.bg },
-          headerTintColor: COLORS.text,
-          headerTitleStyle: { color: COLORS.text },
-          contentStyle: { backgroundColor: COLORS.bg },
+          headerStyle: { backgroundColor: colors.bg },
+          headerTintColor: colors.text,
+          headerTitleStyle: { color: colors.text },
+          contentStyle: { backgroundColor: colors.bg },
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,8 +17,10 @@ import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { useCalendarSync, CalendarCancelled } from '../../src/hooks/useCalendarSync';
+import { useColors } from '../../src/hooks/useColors';
+import { RADIUS } from '../../src/theme/colors';
+import type { AppColors } from '../../src/theme/colors';
 import type { ConflictEvent } from '../../src/services/googleCalendar';
-import { COLORS, RADIUS } from '../../src/theme/colors';
 import { getAppMeta } from '../../src/utils/sourceApps';
 
 function fmtTime(iso: string): string {
@@ -47,11 +50,15 @@ function Field({
   value,
   onChangeText,
   placeholder,
+  colors,
+  styles,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
+  colors: AppColors;
+  styles: ReturnType<typeof makeStyles>;
 }) {
   return (
     <View style={styles.field}>
@@ -61,8 +68,8 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={COLORS.faint}
-        selectionColor={COLORS.accent}
+        placeholderTextColor={colors.faint}
+        selectionColor={colors.accent}
       />
     </View>
   );
@@ -71,6 +78,8 @@ function Field({
 export default function ScheduleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const pendingSchedules = usePendingScheduleStore((s) => s.pendingSchedules);
   const update = usePendingScheduleStore((s) => s.update);
   const { mutate: syncToCalendar, isPending } = useCalendarSync();
@@ -86,7 +95,7 @@ export default function ScheduleDetailScreen() {
     return (
       <View style={styles.backdrop}>
         <View style={[styles.sheet, styles.center]}>
-          <Text style={{ color: COLORS.text }}>일정을 찾을 수 없습니다.</Text>
+          <Text style={{ color: colors.text }}>일정을 찾을 수 없습니다.</Text>
         </View>
       </View>
     );
@@ -135,20 +144,16 @@ export default function ScheduleDetailScreen() {
         style={styles.kbWrap}
         pointerEvents="box-none"
       >
-        {/* 시트 본체 — 안쪽 탭은 닫히지 않게 */}
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          {/* 핸들 */}
           <View style={styles.handle} />
 
-          {/* 헤더 */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>일정 확인 및 수정</Text>
             <TouchableOpacity onPress={() => router.back()} hitSlop={10}>
-              <Ionicons name="close" size={22} color={COLORS.muted} />
+              <Ionicons name="close" size={22} color={colors.muted} />
             </TouchableOpacity>
           </View>
 
-          {/* 원본 메시지 */}
           <View style={styles.rawBox}>
             <View style={[styles.sourceLetter, { backgroundColor: meta.bg }]}>
               <Text style={[styles.sourceLetterText, { color: meta.fg }]}>{meta.letter}</Text>
@@ -163,40 +168,20 @@ export default function ScheduleDetailScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <Field label="제목" value={title} onChangeText={setTitle} placeholder="일정 제목" />
+            <Field label="제목" value={title} onChangeText={setTitle} placeholder="일정 제목" colors={colors} styles={styles} />
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Field
-                  label="날짜"
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="2026-04-30"
-                />
+                <Field label="날짜" value={date} onChangeText={setDate} placeholder="2026-04-30" colors={colors} styles={styles} />
               </View>
               <View style={{ flex: 1 }}>
-                <Field
-                  label="시간"
-                  value={time}
-                  onChangeText={setTime}
-                  placeholder="19:00"
-                />
+                <Field label="시간" value={time} onChangeText={setTime} placeholder="19:00" colors={colors} styles={styles} />
               </View>
             </View>
-            <Field
-              label="장소 (선택)"
-              value={location}
-              onChangeText={setLocation}
-              placeholder="장소"
-            />
+            <Field label="장소 (선택)" value={location} onChangeText={setLocation} placeholder="장소" colors={colors} styles={styles} />
           </ScrollView>
 
-          {/* 액션 */}
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={styles.btnSecondary}
-              onPress={handleSaveOnly}
-              disabled={isPending}
-            >
+            <TouchableOpacity style={styles.btnSecondary} onPress={handleSaveOnly} disabled={isPending}>
               <Text style={styles.btnSecondaryText}>수정만 저장</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -204,11 +189,10 @@ export default function ScheduleDetailScreen() {
               onPress={handleSync}
               disabled={isPending}
             >
-              {isPending ? (
-                <ActivityIndicator color={COLORS.accent} />
-              ) : (
-                <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
-              )}
+              {isPending
+                ? <ActivityIndicator color={colors.accent} />
+                : <Text style={styles.btnPrimaryText}>캘린더에 등록</Text>
+              }
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -217,106 +201,94 @@ export default function ScheduleDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'flex-end',
-  },
-  kbWrap: { justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: RADIUS.sheet,
-    borderTopRightRadius: RADIUS.sheet,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    maxHeight: '88%',
-  },
-  center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 14,
-  },
-
-  // 헤더
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: COLORS.text },
-
-  // 원본 메시지 박스
-  rawBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: COLORS.surfaceAlt,
-    borderRadius: RADIUS.md,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  sourceLetter: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sourceLetterText: { fontSize: 12, fontWeight: '800' },
-  rawText: {
-    flex: 1,
-    fontSize: 13,
-    color: COLORS.muted,
-    fontStyle: 'italic',
-    lineHeight: 19,
-  },
-
-  // 폼
-  scrollContent: { gap: 14, paddingBottom: 12 },
-  row: { flexDirection: 'row', gap: 12 },
-  field: { gap: 6 },
-  fieldLabel: { fontSize: 12, color: COLORS.muted, marginLeft: 2 },
-  input: {
-    backgroundColor: COLORS.surfaceAlt,
-    borderRadius: RADIUS.md,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: COLORS.text,
-  },
-
-  // 액션
-  actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  btnPrimary: {
-    flex: 1.5,
-    paddingVertical: 14,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.accentDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimaryText: { color: COLORS.accent, fontWeight: '600', fontSize: 15 },
-  btnSecondary: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: RADIUS.lg,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnSecondaryText: { color: COLORS.text, fontSize: 15 },
-  btnDisabled: { opacity: 0.5 },
-});
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'flex-end',
+    },
+    kbWrap: { justifyContent: 'flex-end' },
+    sheet: {
+      backgroundColor: c.surface,
+      borderTopLeftRadius: RADIUS.sheet,
+      borderTopRightRadius: RADIUS.sheet,
+      paddingHorizontal: 20,
+      paddingBottom: 24,
+      maxHeight: '88%',
+    },
+    center: { alignItems: 'center', justifyContent: 'center', padding: 32 },
+    handle: {
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.border,
+      alignSelf: 'center',
+      marginTop: 10,
+      marginBottom: 14,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    headerTitle: { fontSize: 16, fontWeight: '600', color: c.text },
+    rawBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 16,
+    },
+    sourceLetter: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sourceLetterText: { fontSize: 12, fontWeight: '800' },
+    rawText: { flex: 1, fontSize: 13, color: c.muted, fontStyle: 'italic', lineHeight: 19 },
+    scrollContent: { gap: 14, paddingBottom: 12 },
+    row: { flexDirection: 'row', gap: 12 },
+    field: { gap: 6 },
+    fieldLabel: { fontSize: 12, color: c.muted, marginLeft: 2 },
+    input: {
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: c.text,
+    },
+    actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    btnPrimary: {
+      flex: 1.5,
+      paddingVertical: 14,
+      borderRadius: RADIUS.lg,
+      backgroundColor: c.accentDim,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    btnPrimaryText: { color: c.accent, fontWeight: '600', fontSize: 15 },
+    btnSecondary: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    btnSecondaryText: { color: c.text, fontSize: 15 },
+    btnDisabled: { opacity: 0.5 },
+  });
+}

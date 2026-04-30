@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,9 @@ import * as Notifications from 'expo-notifications';
 import RNAndroidNotificationListener from 'react-native-android-notification-listener';
 import { signInWithGoogle, getCurrentUserEmail } from '../src/services/googleAuth';
 import { useAppStore } from '../src/stores/appStore';
-import { COLORS, RADIUS } from '../src/theme/colors';
+import { useColors } from '../src/hooks/useColors';
+import { RADIUS } from '../src/theme/colors';
+import type { AppColors } from '../src/theme/colors';
 
 interface PermItem {
   id: 'notif-access' | 'push' | 'google';
@@ -29,27 +31,28 @@ interface PermItem {
   loading?: boolean;
 }
 
-// ─── App Icon (SVG) ───────────────────────────────────────────────────────────
-
-const AppIcon = () => (
-  <Svg width={48} height={48} viewBox="0 0 40 40" fill="none">
-    <Rect x={6} y={8} width={28} height={24} rx={4} stroke={COLORS.accent} strokeWidth={1.5} />
-    <Path d="M6 14h28" stroke={COLORS.accent} strokeWidth={1} />
-    <Circle cx={30} cy={30} r={8} fill={COLORS.bg} stroke={COLORS.success} strokeWidth={1.5} />
-    <Path
-      d="M27 30l2 2 4-3"
-      stroke={COLORS.success}
-      strokeWidth={1.4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+function AppIcon() {
+  const colors = useColors();
+  return (
+    <Svg width={48} height={48} viewBox="0 0 40 40" fill="none">
+      <Rect x={6} y={8} width={28} height={24} rx={4} stroke={colors.accent} strokeWidth={1.5} />
+      <Path d="M6 14h28" stroke={colors.accent} strokeWidth={1} />
+      <Circle cx={30} cy={30} r={8} fill={colors.bg} stroke={colors.success} strokeWidth={1.5} />
+      <Path
+        d="M27 30l2 2 4-3"
+        stroke={colors.success}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const completeOnboarding = useAppStore((s) => s.completeOnboarding);
 
   const [perms, setPerms] = useState<PermItem[]>([
@@ -57,14 +60,14 @@ export default function OnboardingScreen() {
       id: 'notif-access',
       title: '알림 읽기 권한',
       description: 'SMS · 카카오톡 메시지를 감지하기 위해 필요합니다',
-      color: COLORS.accent,
+      color: '#4db8ff',
       granted: false,
     },
     {
       id: 'push',
       title: '알림 표시 권한',
       description: '일정이 감지되면 푸시 알림으로 알려드립니다',
-      color: COLORS.success,
+      color: '#00e5bb',
       granted: false,
     },
     {
@@ -99,7 +102,6 @@ export default function OnboardingScreen() {
 
   useEffect(() => {
     refresh();
-    // 사용자가 시스템 설정에서 권한 토글하고 돌아왔을 때 갱신
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refresh();
     });
@@ -143,16 +145,11 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* 앱 아이콘 */}
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.iconWrap}>
           <AppIcon />
         </View>
 
-        {/* 타이틀 */}
         <View style={styles.titleWrap}>
           <Text style={styles.title}>Smart Scheduler</Text>
           <Text style={styles.subtitle}>
@@ -160,7 +157,6 @@ export default function OnboardingScreen() {
           </Text>
         </View>
 
-        {/* 권한 카드 목록 */}
         <View style={styles.permList}>
           {perms.map((p) => (
             <TouchableOpacity
@@ -176,7 +172,7 @@ export default function OnboardingScreen() {
                 <Text style={styles.permDesc}>{p.description}</Text>
               </View>
               {p.loading ? (
-                <ActivityIndicator size="small" color={COLORS.accent} />
+                <ActivityIndicator size="small" color={colors.accent} />
               ) : p.granted ? (
                 <View style={styles.grantedBadge}>
                   <Text style={styles.grantedText}>✓ 허용됨</Text>
@@ -192,7 +188,6 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        {/* 시작 버튼 */}
         <TouchableOpacity
           style={[styles.startBtn, !allGranted && styles.startBtnDisabled]}
           onPress={handleStart}
@@ -208,7 +203,6 @@ export default function OnboardingScreen() {
           <Text style={styles.skipText}>나중에 설정하기</Text>
         </TouchableOpacity>
 
-        {/* 개인정보 안내 */}
         <Text style={styles.privacyNote}>
           개인정보는 기기에만 저장되며{'\n'}외부로 전송되지 않습니다
         </Text>
@@ -217,122 +211,80 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
-  },
-
-  // 헤더 영역
-  iconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 26,
-    backgroundColor: '#112244',
-    borderWidth: 1,
-    borderColor: COLORS.accentDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  titleWrap: { alignItems: 'center', gap: 10 },
-  title: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: COLORS.text,
-    letterSpacing: 0.3,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: COLORS.muted,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-
-  // 권한 카드
-  permList: { width: '100%', gap: 12 },
-  permCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceAlt,
-    borderRadius: RADIUS.lg,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    padding: 18,
-    gap: 14,
-  },
-  permCardGranted: {
-    borderColor: COLORS.success,
-  },
-  permDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    flexShrink: 0,
-  },
-  permText: { flex: 1, gap: 4 },
-  permTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  permDesc: {
-    fontSize: 13,
-    color: COLORS.muted,
-    lineHeight: 19,
-  },
-  grantedBadge: {
-    backgroundColor: COLORS.successBg,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  grantedText: {
-    fontSize: 12,
-    color: COLORS.success,
-    fontWeight: '600',
-  },
-  deniedBadge: {
-    backgroundColor: COLORS.dangerBg,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  deniedText: {
-    fontSize: 12,
-    color: COLORS.danger,
-    fontWeight: '600',
-  },
-  arrow: { fontSize: 24, color: COLORS.faint },
-
-  // 하단 버튼
-  startBtn: {
-    width: '100%',
-    paddingVertical: 18,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.accentDim,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  startBtnDisabled: { backgroundColor: COLORS.surface },
-  startBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.accent,
-  },
-  startBtnTextDisabled: { color: COLORS.muted },
-  skipBtn: { paddingVertical: 4 },
-  skipText: { fontSize: 13, color: COLORS.faint },
-
-  privacyNote: {
-    fontSize: 12,
-    color: COLORS.faint,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 8,
-  },
-});
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bg },
+    scroll: {
+      flexGrow: 1,
+      paddingHorizontal: 24,
+      paddingVertical: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 24,
+    },
+    iconWrap: {
+      width: 96,
+      height: 96,
+      borderRadius: 26,
+      backgroundColor: c.accentDim,
+      borderWidth: 1,
+      borderColor: c.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    titleWrap: { alignItems: 'center', gap: 10 },
+    title: { fontSize: 28, fontWeight: '600', color: c.text, letterSpacing: 0.3 },
+    subtitle: { fontSize: 15, color: c.muted, textAlign: 'center', lineHeight: 24 },
+    permList: { width: '100%', gap: 12 },
+    permCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      padding: 18,
+      gap: 14,
+    },
+    permCardGranted: { borderColor: c.success },
+    permDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+    permText: { flex: 1, gap: 4 },
+    permTitle: { fontSize: 16, fontWeight: '600', color: c.text },
+    permDesc: { fontSize: 13, color: c.muted, lineHeight: 19 },
+    grantedBadge: {
+      backgroundColor: c.successBg,
+      borderRadius: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    grantedText: { fontSize: 12, color: c.success, fontWeight: '600' },
+    deniedBadge: {
+      backgroundColor: c.dangerBg,
+      borderRadius: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    deniedText: { fontSize: 12, color: c.danger, fontWeight: '600' },
+    arrow: { fontSize: 24, color: c.faint },
+    startBtn: {
+      width: '100%',
+      paddingVertical: 18,
+      borderRadius: RADIUS.lg,
+      backgroundColor: c.accentDim,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    startBtnDisabled: { backgroundColor: c.surface },
+    startBtnText: { fontSize: 16, fontWeight: '600', color: c.accent },
+    startBtnTextDisabled: { color: c.muted },
+    skipBtn: { paddingVertical: 4 },
+    skipText: { fontSize: 13, color: c.faint },
+    privacyNote: {
+      fontSize: 12,
+      color: c.faint,
+      textAlign: 'center',
+      lineHeight: 18,
+      marginTop: 8,
+    },
+  });
+}

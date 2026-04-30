@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { ThemeMode } from '../theme/colors';
 
 export const REMINDER_OPTIONS = [
   { label: '없음', value: null },
@@ -16,9 +17,11 @@ export type ReminderMinutes = 5 | 10 | 30 | 60 | 1440 | null;
 interface AppState {
   onboardingCompleted: boolean;
   reminderMinutes: ReminderMinutes;
+  theme: ThemeMode;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   setReminderMinutes: (v: ReminderMinutes) => void;
+  setTheme: (v: ThemeMode) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -26,9 +29,11 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       onboardingCompleted: false,
       reminderMinutes: 10,
+      theme: 'system',
       completeOnboarding: () => set({ onboardingCompleted: true }),
       resetOnboarding: () => set({ onboardingCompleted: false }),
       setReminderMinutes: (v) => set({ reminderMinutes: v }),
+      setTheme: (v) => set({ theme: v }),
     }),
     {
       name: 'app-state',

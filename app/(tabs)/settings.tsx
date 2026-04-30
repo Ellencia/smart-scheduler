@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,9 @@ import {
 import { extractScheduleFromText } from '../../src/services/gemini';
 import { usePendingScheduleStore } from '../../src/stores/pendingScheduleStore';
 import { useAppStore, REMINDER_OPTIONS, type ReminderMinutes } from '../../src/stores/appStore';
-import { COLORS, RADIUS } from '../../src/theme/colors';
+import { useColors } from '../../src/hooks/useColors';
+import { RADIUS } from '../../src/theme/colors';
+import type { AppColors, ThemeMode } from '../../src/theme/colors';
 
 const DEV_TAP_REQUIRED = 7;
 
@@ -33,7 +35,13 @@ const TEST_MESSAGES = [
   '다음주 월요일 오전 10시 병원 예약 잡혔어요',
 ];
 
-function SectionLabel({ label }: { label: string }) {
+const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
+  { value: 'dark', label: '다크', icon: 'moon' },
+  { value: 'light', label: '라이트', icon: 'sunny' },
+  { value: 'system', label: '시스템', icon: 'phone-portrait' },
+];
+
+function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typeof makeStyles> }) {
   return <Text style={styles.sectionLabel}>{label}</Text>;
 }
 
@@ -58,11 +66,13 @@ function SourceRow({
   onToggle?: (v: boolean) => void;
   disabled?: boolean;
 }) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.card}>
       <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
         {iconIsIon && ionName ? (
-          <Ionicons name={ionName as any} size={16} color={COLORS.muted} />
+          <Ionicons name={ionName as any} size={16} color={colors.muted} />
         ) : (
           <Text style={styles.iconText}>{iconText}</Text>
         )}
@@ -75,8 +85,8 @@ function SourceRow({
         value={enabled}
         onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{ false: COLORS.border, true: COLORS.accent }}
-        thumbColor={COLORS.text}
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={colors.surface}
       />
     </View>
   );
@@ -84,9 +94,13 @@ function SourceRow({
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const resetOnboarding = useAppStore((s) => s.resetOnboarding);
   const reminderMinutes = useAppStore((s) => s.reminderMinutes);
   const setReminderMinutes = useAppStore((s) => s.setReminderMinutes);
+  const theme = useAppStore((s) => s.theme);
+  const setTheme = useAppStore((s) => s.setTheme);
   const addPending = usePendingScheduleStore((s) => s.addPending);
   const [email, setEmail] = useState<string | null>(null);
   const [kakaoOn, setKakaoOn] = useState(true);
@@ -122,11 +136,7 @@ export default function SettingsScreen() {
       const text = TEST_MESSAGES[Math.floor(Math.random() * TEST_MESSAGES.length)];
       const extracted = await extractScheduleFromText(text, apiKey);
       if (!extracted) return Alert.alert('결과 없음', '일정을 추출하지 못했습니다.');
-      const pendingId = addPending({
-        ...extracted,
-        sourceApp: 'dev.test',
-        sourceText: text,
-      });
+      const pendingId = addPending({ ...extracted, sourceApp: 'dev.test', sourceText: text });
       await Notifications.scheduleNotificationAsync({
         content: {
           title: `[테스트] 일정 감지됨: ${extracted.title}`,
@@ -147,11 +157,7 @@ export default function SettingsScreen() {
     setEmail(await getCurrentUserEmail());
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      refresh();
-    }, [refresh])
-  );
+  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   const handleLogin = async () => {
     try {
@@ -169,10 +175,7 @@ export default function SettingsScreen() {
       {
         text: '로그아웃',
         style: 'destructive',
-        onPress: async () => {
-          await signOutFromGoogle();
-          refresh();
-        },
+        onPress: async () => { await signOutFromGoogle(); refresh(); },
       },
     ]);
   };
@@ -183,36 +186,63 @@ export default function SettingsScreen() {
         <Text style={styles.pageTitle}>설정</Text>
 
         {/* 계정 */}
-        <SectionLabel label="계정" />
+        <SectionLabel label="계정" styles={styles} />
         <TouchableOpacity
           style={styles.card}
           onPress={email ? handleLogout : handleLogin}
           activeOpacity={0.7}
         >
           <View style={styles.avatarBox}>
-            <Text style={styles.avatarText}>
-              {email ? email[0].toUpperCase() : 'G'}
-            </Text>
+            <Text style={styles.avatarText}>{email ? email[0].toUpperCase() : 'G'}</Text>
           </View>
           <View style={styles.cardBody}>
-            <Text style={styles.cardTitle}>
-              {email ?? 'Google 계정 연동'}
-            </Text>
-            <Text style={styles.cardSub}>
-              {email ? 'Google 계정 연결됨' : '탭하여 연결하기'}
-            </Text>
+            <Text style={styles.cardTitle}>{email ?? 'Google 계정 연동'}</Text>
+            <Text style={styles.cardSub}>{email ? 'Google 계정 연결됨' : '탭하여 연결하기'}</Text>
           </View>
           {email ? (
             <View style={styles.connectedBadge}>
               <Text style={styles.connectedText}>연결됨</Text>
             </View>
           ) : (
-            <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+            <Ionicons name="chevron-forward" size={16} color={colors.faint} />
           )}
         </TouchableOpacity>
 
+        {/* 테마 */}
+        <SectionLabel label="테마" styles={styles} />
+        <View style={styles.card}>
+          <View style={styles.modelIconBox}>
+            <Ionicons name="contrast-outline" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>화면 테마</Text>
+          </View>
+          <View style={styles.themeSelector}>
+            {THEME_OPTIONS.map((opt) => {
+              const active = theme === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.themeBtn, active && styles.themeBtnActive]}
+                  onPress={() => setTheme(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={opt.icon as any}
+                    size={13}
+                    color={active ? colors.accent : colors.muted}
+                  />
+                  <Text style={[styles.themeBtnText, active && styles.themeBtnTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {/* 알림 소스 */}
-        <SectionLabel label="알림 소스" />
+        <SectionLabel label="알림 소스" styles={styles} />
         <SourceRow
           iconBg="#e8a400"
           iconText="K"
@@ -222,7 +252,7 @@ export default function SettingsScreen() {
           onToggle={setKakaoOn}
         />
         <SourceRow
-          iconBg={COLORS.accentDim}
+          iconBg={colors.accentDim}
           iconText="S"
           title="SMS"
           subtitle="문자 메시지 감지"
@@ -230,7 +260,7 @@ export default function SettingsScreen() {
           onToggle={setSmsOn}
         />
         <SourceRow
-          iconBg={COLORS.surfaceAlt}
+          iconBg={colors.surfaceAlt}
           iconIsIon
           ionName="card-outline"
           title="이메일"
@@ -240,14 +270,14 @@ export default function SettingsScreen() {
         />
 
         {/* 캘린더 알림 */}
-        <SectionLabel label="캘린더 알림" />
+        <SectionLabel label="캘린더 알림" styles={styles} />
         <TouchableOpacity
           style={styles.card}
           onPress={() => setShowReminderPicker((v) => !v)}
           activeOpacity={0.7}
         >
           <View style={styles.modelIconBox}>
-            <Ionicons name="alarm-outline" size={18} color={COLORS.accent} />
+            <Ionicons name="alarm-outline" size={18} color={colors.accent} />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle}>일정 알림</Text>
@@ -259,7 +289,7 @@ export default function SettingsScreen() {
           <Ionicons
             name={showReminderPicker ? 'chevron-up' : 'chevron-down'}
             size={14}
-            color={COLORS.faint}
+            color={colors.faint}
           />
         </TouchableOpacity>
 
@@ -271,18 +301,13 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   key={String(opt.value)}
                   style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-                  onPress={() => {
-                    setReminderMinutes(opt.value as ReminderMinutes);
-                    setShowReminderPicker(false);
-                  }}
+                  onPress={() => { setReminderMinutes(opt.value as ReminderMinutes); setShowReminderPicker(false); }}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.pickerText, selected && styles.pickerTextSelected]}>
                     {opt.label}
                   </Text>
-                  {selected && (
-                    <Ionicons name="checkmark" size={16} color={COLORS.accent} />
-                  )}
+                  {selected && <Ionicons name="checkmark" size={16} color={colors.accent} />}
                 </TouchableOpacity>
               );
             })}
@@ -290,10 +315,10 @@ export default function SettingsScreen() {
         )}
 
         {/* AI 모델 */}
-        <SectionLabel label="AI 모델" />
+        <SectionLabel label="AI 모델" styles={styles} />
         <View style={styles.card}>
           <View style={styles.modelIconBox}>
-            <Ionicons name="add" size={18} color={COLORS.accent} />
+            <Ionicons name="add" size={18} color={colors.accent} />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle}>Gemini 2.5 Flash</Text>
@@ -302,7 +327,7 @@ export default function SettingsScreen() {
           <Text style={styles.activeText}>사용중</Text>
         </View>
 
-        {/* 버전 — 7회 탭 시 개발자 모드 해제 */}
+        {/* 버전 */}
         <TouchableOpacity onPress={handleVersionTap} style={styles.versionRow} activeOpacity={0.6}>
           <Text style={styles.versionText}>버전 1.0.0</Text>
           {devTaps > 0 && !devUnlocked && (
@@ -313,42 +338,39 @@ export default function SettingsScreen() {
         {/* 개발자 도구 */}
         {devUnlocked && (
           <>
-            <SectionLabel label="🛠️ 개발자 도구" />
+            <SectionLabel label="🛠️ 개발자 도구" styles={styles} />
             <TouchableOpacity
               style={styles.card}
               onPress={handleTestNotification}
               disabled={testLoading}
               activeOpacity={0.7}
             >
-              <View style={[styles.iconBox, { backgroundColor: '#1a2a1a' }]}>
-                <Ionicons name="flask-outline" size={18} color={COLORS.success} />
+              <View style={[styles.iconBox, { backgroundColor: colors.successBg }]}>
+                <Ionicons name="flask-outline" size={18} color={colors.success} />
               </View>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>테스트 알림 전송</Text>
                 <Text style={styles.cardSub}>샘플 메시지 → Gemini → 카드+푸시</Text>
               </View>
               {testLoading
-                ? <ActivityIndicator size="small" color={COLORS.success} />
-                : <Ionicons name="play" size={16} color={COLORS.success} />
+                ? <ActivityIndicator size="small" color={colors.success} />
+                : <Ionicons name="play" size={16} color={colors.success} />
               }
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.card}
-              onPress={() => {
-                resetOnboarding();
-                router.replace('/onboarding');
-              }}
+              onPress={() => { resetOnboarding(); router.replace('/onboarding'); }}
               activeOpacity={0.7}
             >
-              <View style={[styles.iconBox, { backgroundColor: '#1a1a2a' }]}>
-                <Ionicons name="refresh-outline" size={18} color={COLORS.accent} />
+              <View style={[styles.iconBox, { backgroundColor: colors.accentDim }]}>
+                <Ionicons name="refresh-outline" size={18} color={colors.accent} />
               </View>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>온보딩 다시 보기</Text>
                 <Text style={styles.cardSub}>온보딩 화면으로 이동</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
             </TouchableOpacity>
           </>
         )}
@@ -357,122 +379,124 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: 16, paddingBottom: 40 },
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.bg },
+    content: { padding: 16, paddingBottom: 40 },
+    pageTitle: {
+      fontSize: 26,
+      fontWeight: '700',
+      color: c.text,
+      marginBottom: 24,
+      marginTop: 4,
+    },
+    sectionLabel: {
+      fontSize: 12,
+      color: c.muted,
+      marginBottom: 8,
+      marginTop: 24,
+      marginLeft: 2,
+    },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      marginBottom: 8,
+      gap: 12,
+    },
+    cardBody: { flex: 1, gap: 3 },
+    cardTitle: { fontSize: 15, fontWeight: '600', color: c.text },
+    cardSub: { fontSize: 12, color: c.muted },
+    avatarBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: c.accentDim,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { fontSize: 17, fontWeight: '700', color: c.accent },
+    connectedBadge: {
+      backgroundColor: c.successBg,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: RADIUS.sm,
+    },
+    connectedText: { fontSize: 12, fontWeight: '600', color: c.success },
+    iconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    iconText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+    modelIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: 1.5,
+      borderColor: c.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    activeText: { fontSize: 13, color: c.accent, fontWeight: '600' },
+    versionRow: { alignItems: 'center', paddingVertical: 20, gap: 4 },
+    versionText: { fontSize: 12, color: c.faint },
+    versionHint: { fontSize: 11, color: c.muted },
+    reminderBadge: {
+      backgroundColor: c.accentDim,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: RADIUS.sm,
+    },
+    reminderBadgeText: { fontSize: 12, fontWeight: '600', color: c.accent },
+    pickerBox: {
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      marginBottom: 8,
+      overflow: 'hidden',
+    },
+    pickerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: 0.5,
+      borderBottomColor: c.border,
+    },
+    pickerRowSelected: { backgroundColor: c.accentDim },
+    pickerText: { fontSize: 15, color: c.text },
+    pickerTextSelected: { color: c.accent, fontWeight: '600' },
 
-  pageTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 24,
-    marginTop: 4,
-  },
-
-  sectionLabel: {
-    fontSize: 12,
-    color: COLORS.muted,
-    marginBottom: 8,
-    marginTop: 24,
-    marginLeft: 2,
-  },
-
-  // 공통 카드 행
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 8,
-    gap: 12,
-  },
-  cardBody: { flex: 1, gap: 3 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  cardSub: { fontSize: 12, color: COLORS.muted },
-
-  // 계정 아바타
-  avatarBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.accentDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 17, fontWeight: '700', color: COLORS.accent },
-
-  // 연결됨 뱃지
-  connectedBadge: {
-    backgroundColor: '#0f2e1a',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
-  },
-  connectedText: { fontSize: 12, fontWeight: '600', color: COLORS.success },
-
-  // 소스 아이콘
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconText: { fontSize: 15, fontWeight: '800', color: '#fff' },
-
-  // AI 모델 아이콘
-  modelIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeText: { fontSize: 13, color: COLORS.accent, fontWeight: '600' },
-
-  // 버전
-  versionRow: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    gap: 4,
-  },
-  versionText: { fontSize: 12, color: COLORS.faint },
-  versionHint: { fontSize: 11, color: COLORS.muted },
-
-  // 알림 설정 뱃지
-  reminderBadge: {
-    backgroundColor: COLORS.accentDim,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
-  },
-  reminderBadgeText: { fontSize: 12, fontWeight: '600', color: COLORS.accent },
-
-  // 드롭다운 피커
-  pickerBox: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    marginBottom: 8,
-    overflow: 'hidden',
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.border,
-  },
-  pickerRowSelected: { backgroundColor: COLORS.accentDim },
-  pickerText: { fontSize: 15, color: COLORS.text },
-  pickerTextSelected: { color: COLORS.accent, fontWeight: '600' },
-});
+    // 테마 선택
+    themeSelector: {
+      flexDirection: 'row',
+      backgroundColor: c.surfaceAlt,
+      borderRadius: RADIUS.md,
+      borderWidth: 0.5,
+      borderColor: c.border,
+      overflow: 'hidden',
+    },
+    themeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    themeBtnActive: {
+      backgroundColor: c.accentDim,
+    },
+    themeBtnText: { fontSize: 12, color: c.muted },
+    themeBtnTextActive: { color: c.accent, fontWeight: '600' },
+  });
+}

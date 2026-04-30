@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { COLORS, RADIUS } from '../theme/colors';
+import { useColors } from '../hooks/useColors';
+import { RADIUS } from '../theme/colors';
+import type { AppColors } from '../theme/colors';
 
 interface Props {
   message: string;
@@ -9,6 +11,8 @@ interface Props {
 }
 
 export function UndoSnackbar({ message, onUndo, onDismiss }: Props) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const translateY = useRef(new Animated.Value(80)).current;
 
   useEffect(() => {
@@ -51,50 +55,37 @@ export function UndoSnackbar({ message, onUndo, onDismiss }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e2d48',
-    borderRadius: RADIUS.lg,
-    borderWidth: 0.5,
-    borderColor: COLORS.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  message: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text,
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  undoBtn: {
-    backgroundColor: COLORS.accentDim,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: RADIUS.sm,
-  },
-  undoText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.accent,
-  },
-  closeText: {
-    fontSize: 13,
-    color: COLORS.faint,
-  },
-});
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    container: {
+      position: 'absolute',
+      bottom: 16,
+      left: 16,
+      right: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: RADIUS.lg,
+      borderWidth: 0.5,
+      borderColor: c.accent,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      gap: 12,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 8,
+    },
+    message: { flex: 1, fontSize: 14, color: c.text },
+    actions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    undoBtn: {
+      backgroundColor: c.accentDim,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: RADIUS.sm,
+    },
+    undoText: { fontSize: 13, fontWeight: '600', color: c.accent },
+    closeText: { fontSize: 13, color: c.faint },
+  });
+}

@@ -26,6 +26,7 @@ import { useAppStore, REMINDER_OPTIONS, type ReminderMinutes } from '../../src/s
 import { useColors } from '../../src/hooks/useColors';
 import { RADIUS } from '../../src/theme/colors';
 import type { AppColors, ThemeMode } from '../../src/theme/colors';
+import notificationTask from '../../src/background/notificationTask';
 
 const DEV_TAP_REQUIRED = 7;
 
@@ -123,6 +124,7 @@ export default function SettingsScreen() {
   const [devTaps, setDevTaps] = useState(0);
   const [devUnlocked, setDevUnlocked] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
+  const [autoTestLoading, setAutoTestLoading] = useState(false);
   const [ignoredKeywordInput, setIgnoredKeywordInput] = useState(() => ignoredKeywords.join(', '));
   const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -190,6 +192,27 @@ export default function SettingsScreen() {
       Alert.alert('오류', e?.message ?? String(e));
     } finally {
       setTestLoading(false);
+    }
+  };
+
+  const handleAutoSyncPathTest = async () => {
+    setAutoTestLoading(true);
+    try {
+      const text = TEST_MESSAGES[Math.floor(Math.random() * TEST_MESSAGES.length)];
+      await notificationTask({
+        notification: {
+          app: 'com.kakao.talk',
+          title: '개발자 테스트',
+          text,
+          time: new Date().toISOString(),
+        },
+      });
+      await usePendingScheduleStore.persist.rehydrate();
+      Alert.alert('자동등록 테스트 완료', `"${text}"\n\n로그와 최근 처리/캘린더 탭을 확인하세요.`);
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? String(e));
+    } finally {
+      setAutoTestLoading(false);
     }
   };
 
@@ -467,6 +490,25 @@ export default function SettingsScreen() {
               {testLoading
                 ? <ActivityIndicator size="small" color={colors.success} />
                 : <Ionicons name="play" size={16} color={colors.success} />
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.card}
+              onPress={handleAutoSyncPathTest}
+              disabled={autoTestLoading}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconBox, { backgroundColor: colors.accentDim }]}>
+                <Ionicons name="calendar-outline" size={18} color={colors.accent} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>자동등록 경로 테스트</Text>
+                <Text style={styles.cardSub}>가짜 카카오톡 알림 → Headless 경로 직접 실행</Text>
+              </View>
+              {autoTestLoading
+                ? <ActivityIndicator size="small" color={colors.accent} />
+                : <Ionicons name="play" size={16} color={colors.accent} />
               }
             </TouchableOpacity>
 

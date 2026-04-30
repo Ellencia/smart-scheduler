@@ -4,7 +4,7 @@ import { extractScheduleFromText } from '../services/gemini';
 import { createCalendarEvent } from '../services/googleCalendar';
 import { getStoredToken } from '../services/googleAuth';
 import { DEFAULT_SOURCE_SETTINGS, type SourceSettings, type ReminderMinutes } from '../stores/appStore';
-import type { Schedule } from '../types/schedule';
+import type { Schedule, ScheduleProcessingReason } from '../types/schedule';
 
 const KAKAO_APP = 'com.kakao.talk';
 const SMS_APPS = new Set([
@@ -117,6 +117,10 @@ function getInFlightKey(sourceApp: string, sourceText: string): string {
   return `${sourceApp}:${normalizeForDuplicate(sourceText)}`;
 }
 
+function logDecision(reason: string, detail?: Record<string, unknown>) {
+  console.log('[NotificationTask] decision:', reason, detail ?? {});
+}
+
 async function getStoredSchedules(): Promise<Schedule[]> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY);
@@ -165,7 +169,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
   let inFlightKey: string | null = null;
   try {
     if (!payload?.notification) {
-      console.log('[NotificationTask] empty payload');
+      logDecision('skip:empty-payload');
       return;
     }
 
@@ -177,7 +181,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
     console.log('[NotificationTask] received:', notification.app, '|', notification.title);
 
     if (!TARGET_APPS.has(notification.app)) {
-      console.log('[NotificationTask] skipped — not target app');
+      logDecision('skip:not-target-app', { app: notification.app });
       return;
     }
 
@@ -190,34 +194,34 @@ export default async function notificationTask(payload: HeadlessPayload) {
     });
 
     if (!(await isNotificationSourceEnabled(notification.app, appSettings))) {
-      console.log('[NotificationTask] skipped — source disabled');
+      logDecision('skip:source-disabled', { app: notification.app });
       return;
     }
     if (!notification.text || notification.text.length < 5) {
-      console.log('[NotificationTask] skipped — text too short');
+      logDecision('skip:text-too-short');
       return;
     }
     const ignoredKeyword = isIgnoredText(notification.text, appSettings.ignoredKeywords);
     if (ignoredKeyword) {
-      console.log('[NotificationTask] skipped — ignored keyword:', ignoredKeyword);
+      logDecision('skip:ignored-keyword', { ignoredKeyword });
       return;
     }
 
     // 사전 키워드 필터링 — Gemini 호출 자체를 줄여서 429 회피
     if (!hasScheduleKeyword(notification.text)) {
-      console.log('[NotificationTask] skipped — no schedule keyword');
+      logDecision('skip:no-schedule-keyword');
       return;
     }
 
     // [1단계] 중복 알림 차단 — 같은 메시지가 갱신/재전송돼도 한 번만 처리
     if (await isDuplicateText(notification.app, notification.text)) {
-      console.log('[NotificationTask] skipped — duplicate text');
+      logDecision('skip:duplicate-text');
       return;
     }
 
     inFlightKey = getInFlightKey(notification.app, notification.text);
     if (IN_FLIGHT_NOTIFICATIONS.has(inFlightKey)) {
-      console.log('[NotificationTask] skipped — already processing');
+      logDecision('skip:duplicate-inflight');
       return;
     }
     IN_FLIGHT_NOTIFICATIONS.add(inFlightKey);
@@ -227,17 +231,21 @@ export default async function notificationTask(payload: HeadlessPayload) {
     const extracted = await extractScheduleFromText(notification.text, apiKey);
 
     if (!extracted) {
-      console.log('[NotificationTask] no schedule found');
+      logDecision('skip:no-schedule-found');
       return;
     }
     if (extracted.confidence < 0.6) {
-      console.log('[NotificationTask] confidence too low:', extracted.confidence);
+      logDecision('skip:confidence-too-low', { confidence: extracted.confidence });
       return;
     }
 
     // [2단계] 같은 제목+날짜+시간 일정이 이미 존재하면 스킵
     if (await isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
-      console.log('[NotificationTask] skipped — schedule already exists:', extracted.title, extracted.date, extracted.time);
+      logDecision('skip:duplicate-schedule', {
+        title: extracted.title,
+        date: extracted.date,
+        time: extracted.time,
+      });
       return;
     }
 
@@ -256,6 +264,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
       confidence: extracted.confidence,
       createdAt: now,
       updatedAt: now,
+      processingReason: 'manual_pending',
     };
 
     // 자동등록 ON: 캘린더에 바로 등록, 실패 시 pending으로 폴백
@@ -264,6 +273,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
         await saveScheduleToStorage({
           ...baseSchedule,
           processingNote: `자동등록 보류: 신뢰도 ${Math.round(extracted.confidence * 100)}%`,
+          processingReason: 'fallback_low_confidence',
         });
         await Notifications.scheduleNotificationAsync({
           content: {
@@ -273,7 +283,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
           },
           trigger: { channelId: 'schedule-detected' } as any,
         });
-        console.log('[NotificationTask] autoSync held — low confidence:', extracted.confidence);
+        logDecision('fallback:low-confidence', { confidence: extracted.confidence });
         return;
       }
 
@@ -281,6 +291,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
         await saveScheduleToStorage({
           ...baseSchedule,
           processingNote: '자동등록 보류: 장소 정보 없음',
+          processingReason: 'fallback_missing_location',
         });
         await Notifications.scheduleNotificationAsync({
           content: {
@@ -290,19 +301,21 @@ export default async function notificationTask(payload: HeadlessPayload) {
           },
           trigger: { channelId: 'schedule-detected' } as any,
         });
-        console.log('[NotificationTask] autoSync held — missing location');
+        logDecision('fallback:missing-location');
         return;
       }
 
       const token = await getStoredToken();
       if (token) {
         try {
+          logDecision('auto-sync:start');
           const calendarEventId = await createCalendarEvent(baseSchedule, token, appSettings.reminderMinutes);
           await saveScheduleToStorage({
             ...baseSchedule,
             status: 'synced',
             calendarEventId,
             processingNote: '자동등록 완료',
+            processingReason: 'auto_synced',
             updatedAt: new Date(),
           });
           await Notifications.scheduleNotificationAsync({
@@ -313,16 +326,18 @@ export default async function notificationTask(payload: HeadlessPayload) {
             },
             trigger: { channelId: 'schedule-detected' } as any,
           });
-          console.log('[NotificationTask] auto-synced:', extracted.title);
+          logDecision('auto-sync:success', { title: extracted.title, calendarEventId });
           return;
         } catch (err) {
           console.error('[NotificationTask] autoSync failed, falling back to pending:', err);
           baseSchedule.processingNote =
             err instanceof Error ? `자동등록 실패: ${err.message}` : '자동등록 실패';
+          baseSchedule.processingReason = 'fallback_calendar_error';
         }
       } else {
-        console.log('[NotificationTask] autoSync skipped — no token, falling back to pending');
+        logDecision('fallback:no-token');
         baseSchedule.processingNote = '자동등록 보류: Google 로그인이 필요합니다';
+        baseSchedule.processingReason = 'fallback_no_token';
       }
     }
 
@@ -341,7 +356,10 @@ export default async function notificationTask(payload: HeadlessPayload) {
       },
       trigger: { channelId: 'schedule-detected' } as any,
     });
-    console.log('[NotificationTask] saved pending:', extracted.title);
+    logDecision(
+      `pending:saved:${baseSchedule.processingReason as ScheduleProcessingReason}`,
+      { title: extracted.title }
+    );
   } catch (err) {
     console.error('[NotificationTask] failed:', err);
   } finally {

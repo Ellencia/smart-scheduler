@@ -141,26 +141,26 @@ export default function CalendarScreen() {
             </View>
 
             <View style={styles.grid}>
-              {grid.map((day, idx) => {
-                if (day === null) return <View key={idx} style={styles.cell} />;
-                const today = isToday(day);
-                const selected = selectedDay === day;
-                const hasEvent = datesWithEvents.has(day);
+              {grid.map(({ day, overflow }, idx) => {
+                const today = !overflow && isToday(day);
+                const selected = !overflow && selectedDay === day;
+                const hasEvent = !overflow && datesWithEvents.has(day);
                 const dayOfWeek = idx % 7;
 
                 return (
                   <TouchableOpacity
                     key={idx}
                     style={styles.cell}
-                    onPress={() => setSelectedDay(day)}
-                    activeOpacity={0.6}
+                    onPress={() => { if (!overflow) setSelectedDay(day); }}
+                    activeOpacity={overflow ? 1 : 0.6}
                   >
                     <View style={[styles.dayWrap, selected && styles.daySelected]}>
                       <Text
                         style={[
                           styles.dayText,
-                          dayOfWeek === 0 && { color: colors.sundayColor },
-                          dayOfWeek === 6 && { color: colors.saturdayColor },
+                          overflow && styles.dayOverflow,
+                          !overflow && dayOfWeek === 0 && { color: colors.sundayColor },
+                          !overflow && dayOfWeek === 6 && { color: colors.saturdayColor },
                           today && !selected && { color: colors.accent, fontWeight: '700' },
                           selected && { color: colors.text, fontWeight: '700' },
                         ]}
@@ -288,6 +288,7 @@ function makeStyles(c: AppColors) {
       borderColor: c.accent,
     },
     dayText: { fontSize: 15, color: c.text, fontWeight: '500' },
+    dayOverflow: { color: c.faint },
     eventDot: {
       position: 'absolute',
       bottom: 4,

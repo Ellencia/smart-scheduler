@@ -9,15 +9,25 @@ export const WEEKDAYS_FULL = [
   '토요일',
 ];
 
-// 한 달의 7×N 그리드. 빈 칸은 null
-export function getMonthGrid(year: number, month: number): (number | null)[] {
+export interface CalendarDay {
+  day: number;
+  overflow: boolean; // true = 이전/다음 달 날짜
+}
+
+// 한 달의 7×N 그리드. 앞뒤 빈 칸은 인접 달 날짜로 채움
+export function getMonthGrid(year: number, month: number): CalendarDay[] {
   const startWeekday = new Date(year, month, 1).getDay(); // 0=일
   const lastDate = new Date(year, month + 1, 0).getDate();
+  const prevLastDate = new Date(year, month, 0).getDate();
 
-  const grid: (number | null)[] = [];
-  for (let i = 0; i < startWeekday; i++) grid.push(null);
-  for (let d = 1; d <= lastDate; d++) grid.push(d);
-  while (grid.length % 7 !== 0) grid.push(null);
+  const grid: CalendarDay[] = [];
+  for (let i = startWeekday - 1; i >= 0; i--)
+    grid.push({ day: prevLastDate - i, overflow: true });
+  for (let d = 1; d <= lastDate; d++)
+    grid.push({ day: d, overflow: false });
+  let nextDay = 1;
+  while (grid.length % 7 !== 0)
+    grid.push({ day: nextDay++, overflow: true });
   return grid;
 }
 

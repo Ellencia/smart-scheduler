@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, PanResponder } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -55,17 +55,49 @@ export default function CalendarScreen() {
   const isToday = (day: number) =>
     TODAY.getFullYear() === year && TODAY.getMonth() === month && TODAY.getDate() === day;
 
-  const goPrev = () => {
+  // 슬라이드 애니메이션
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const animateMonth = (direction: 'prev' | 'next', changeFn: () => void) => {
+    const outX = direction === 'prev' ? 300 : -300;
+    Animated.timing(slideAnim, {
+      toValue: outX,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      changeFn();
+      slideAnim.setValue(-outX);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
+  const goPrev = () => animateMonth('prev', () => {
     if (month === 0) { setYear((y) => y - 1); setMonth(11); }
     else setMonth((m) => m - 1);
     setSelectedDay(null);
-  };
+  });
 
-  const goNext = () => {
+  const goNext = () => animateMonth('next', () => {
     if (month === 11) { setYear((y) => y + 1); setMonth(0); }
     else setMonth((m) => m + 1);
     setSelectedDay(null);
-  };
+  });
+
+  // 스와이프 제스처 (ScrollView 수직 스크롤과 충돌 방지)
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        if (dx > 60 || vx > 0.4) goPrev();
+        else if (dx < -60 || vx < -0.4) goNext();
+      },
+    })
+  ).current;
 
   const selectedLabel =
     selectedDay !== null
@@ -87,53 +119,61 @@ export default function CalendarScreen() {
           </View>
         </View>
 
-        <View style={styles.weekRow}>
-          {WEEKDAYS_SHORT.map((w, i) => (
-            <Text
-              key={w}
-              style={[
-                styles.weekday,
-                i === 0 && { color: colors.sundayColor },
-                i === 6 && { color: colors.saturdayColor },
-              ]}
-            >
-              {w}
-            </Text>
-          ))}
-        </View>
+        {/* 스와이프 영역: 요일 헤더 + 날짜 그리드 */}
+        <View style={styles.gridClip}>
+          <Animated.View
+            style={{ transform: [{ translateX: slideAnim }] }}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.weekRow}>
+              {WEEKDAYS_SHORT.map((w, i) => (
+                <Text
+                  key={w}
+                  style={[
+                    styles.weekday,
+                    i === 0 && { color: colors.sundayColor },
+                    i === 6 && { color: colors.saturdayColor },
+                  ]}
+                >
+                  {w}
+                </Text>
+              ))}
+            </View>
 
-        <View style={styles.grid}>
-          {grid.map((day, idx) => {
-            if (day === null) return <View key={idx} style={styles.cell} />;
-            const today = isToday(day);
-            const selected = selectedDay === day;
-            const hasEvent = datesWithEvents.has(day);
-            const dayOfWeek = idx % 7;
+            <View style={styles.grid}>
+              {grid.map((day, idx) => {
+                if (day === null) return <View key={idx} style={styles.cell} />;
+                const today = isToday(day);
+                const selected = selectedDay === day;
+                const hasEvent = datesWithEvents.has(day);
+                const dayOfWeek = idx % 7;
 
-            return (
-              <TouchableOpacity
-                key={idx}
-                style={styles.cell}
-                onPress={() => setSelectedDay(day)}
-                activeOpacity={0.6}
-              >
-                <View style={[styles.dayWrap, selected && styles.daySelected]}>
-                  <Text
-                    style={[
-                      styles.dayText,
-                      dayOfWeek === 0 && { color: colors.sundayColor },
-                      dayOfWeek === 6 && { color: colors.saturdayColor },
-                      today && !selected && { color: colors.accent, fontWeight: '700' },
-                      selected && { color: colors.text, fontWeight: '700' },
-                    ]}
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.cell}
+                    onPress={() => setSelectedDay(day)}
+                    activeOpacity={0.6}
                   >
-                    {day}
-                  </Text>
-                </View>
-                {hasEvent && <View style={styles.eventDot} />}
-              </TouchableOpacity>
-            );
-          })}
+                    <View style={[styles.dayWrap, selected && styles.daySelected]}>
+                      <Text
+                        style={[
+                          styles.dayText,
+                          dayOfWeek === 0 && { color: colors.sundayColor },
+                          dayOfWeek === 6 && { color: colors.saturdayColor },
+                          today && !selected && { color: colors.accent, fontWeight: '700' },
+                          selected && { color: colors.text, fontWeight: '700' },
+                        ]}
+                      >
+                        {day}
+                      </Text>
+                    </View>
+                    {hasEvent && <View style={styles.eventDot} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Animated.View>
         </View>
 
         <View style={styles.divider} />
@@ -217,6 +257,7 @@ function makeStyles(c: AppColors) {
     },
     navBtn: { paddingVertical: 6, paddingHorizontal: 8 },
 
+    gridClip: { overflow: 'hidden' },
     weekRow: { flexDirection: 'row', marginBottom: 6 },
     weekday: {
       flex: 1,

@@ -28,6 +28,7 @@ import { RADIUS } from '../../src/theme/colors';
 import type { AppColors, ThemeMode } from '../../src/theme/colors';
 import notificationTask from '../../src/background/notificationTask';
 import { DevLogViewer } from '../../src/components/DevLogViewer';
+import { getDevLogs } from '../../src/utils/devLog';
 
 const DEV_TAP_REQUIRED = 7;
 
@@ -43,11 +44,6 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
   { value: 'system', label: '시스템', icon: 'phone-portrait' },
 ];
 
-const CONFIDENCE_OPTIONS = [
-  { value: 0.6, label: '보통' },
-  { value: 0.75, label: '높음' },
-  { value: 0.9, label: '매우 높음' },
-];
 
 function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typeof makeStyles> }) {
   return <Text style={styles.sectionLabel}>{label}</Text>;
@@ -121,9 +117,7 @@ export default function SettingsScreen() {
   const setRequiredEventField = useAppStore((s) => s.setRequiredEventField);
   const autoSync = useAppStore((s) => s.autoSync);
   const setAutoSync = useAppStore((s) => s.setAutoSync);
-  const autoSyncMinConfidence = useAppStore((s) => s.autoSyncMinConfidence);
-  const setAutoSyncMinConfidence = useAppStore((s) => s.setAutoSyncMinConfidence);
-  const autoSyncAllowConflicts = useAppStore((s) => s.autoSyncAllowConflicts);
+const autoSyncAllowConflicts = useAppStore((s) => s.autoSyncAllowConflicts);
   const setAutoSyncAllowConflicts = useAppStore((s) => s.setAutoSyncAllowConflicts);
   const ignoredKeywords = useAppStore((s) => s.ignoredKeywords);
   const setIgnoredKeywords = useAppStore((s) => s.setIgnoredKeywords);
@@ -217,7 +211,27 @@ export default function SettingsScreen() {
         },
       });
       await usePendingScheduleStore.persist.rehydrate();
-      Alert.alert('자동등록 테스트 완료', `"${text}"\n\n로그와 최근 처리/캘린더 탭을 확인하세요.`);
+      const schedules = usePendingScheduleStore.getState().pendingSchedules;
+      const matched = schedules
+        .filter((item) => item.sourceText === text)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+      const logs = await getDevLogs();
+      const latestDecision = logs.find(
+        (entry) => entry.tag === 'NotificationTask' && entry.msg !== 'received'
+      );
+      const modeLine = autoSync
+        ? '현재 자동등록 ON'
+        : '현재 자동등록 OFF: 확인 카드 생성이 정상 동작입니다.';
+      const resultLine = matched
+        ? matched.status === 'synced'
+          ? `자동등록 완료: ${matched.title}`
+          : `보류/카드 생성: ${matched.processingNote ?? matched.title}`
+        : `스킵됨: ${latestDecision?.msg ?? '처리 결과 없음'}`;
+
+      Alert.alert(
+        '자동등록 테스트 결과',
+        `${modeLine}\n${resultLine}\n\n샘플: "${text}"`
+      );
     } catch (e: any) {
       Alert.alert('오류', e?.message ?? String(e));
     } finally {
@@ -375,29 +389,6 @@ export default function SettingsScreen() {
         />
         {autoSync && (
           <View style={styles.optionBox}>
-            <View style={styles.optionHeader}>
-              <View>
-                <Text style={styles.optionTitle}>자동등록 기준</Text>
-                <Text style={styles.optionSub}>기준 미달 시 확인 카드로 전환</Text>
-              </View>
-            </View>
-            <View style={styles.segmentRow}>
-              {CONFIDENCE_OPTIONS.map((opt) => {
-                const selected = autoSyncMinConfidence === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.segmentBtn, selected && styles.segmentBtnSelected]}
-                    onPress={() => setAutoSyncMinConfidence(opt.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
             <View style={styles.optionRow}>
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle}>시간 겹침 허용</Text>

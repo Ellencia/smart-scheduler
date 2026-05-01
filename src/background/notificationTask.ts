@@ -65,7 +65,6 @@ interface AppSettings {
   requiredEventFields: RequiredEventFields;
   reminderMinutes: ReminderMinutes;
   autoSync: boolean;
-  autoSyncMinConfidence: number;
   autoSyncAllowConflicts: boolean;
   ignoredKeywords: string[];
 }
@@ -75,7 +74,6 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   requiredEventFields: DEFAULT_REQUIRED_EVENT_FIELDS,
   reminderMinutes: 10,
   autoSync: false,
-  autoSyncMinConfidence: 0.75,
   autoSyncAllowConflicts: false,
   ignoredKeywords: [],
 };
@@ -93,7 +91,6 @@ async function getAppSettings(): Promise<AppSettings> {
       },
       reminderMinutes: parsed?.state?.reminderMinutes ?? 10,
       autoSync: parsed?.state?.autoSync ?? false,
-      autoSyncMinConfidence: parsed?.state?.autoSyncMinConfidence ?? 0.75,
       autoSyncAllowConflicts: parsed?.state?.autoSyncAllowConflicts ?? false,
       ignoredKeywords: parsed?.state?.ignoredKeywords ?? [],
     };
@@ -137,6 +134,30 @@ function logDecision(reason: string, detail?: Record<string, unknown>) {
     : reason.includes('error') || reason.includes('fail') ? 'error'
     : 'info';
   devLog('NotificationTask', reason, detail, level).catch(() => {});
+}
+
+function scheduleLogDetail(
+  sourceApp: string,
+  textLength: number,
+  event: {
+    title?: string | null;
+    date?: string | null;
+    time?: string | null;
+    location?: string | null;
+    confidence?: number | null;
+  },
+  extra?: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    sourceApp,
+    textLength,
+    title: event.title,
+    date: event.date,
+    time: event.time,
+    hasLocation: Boolean(event.location?.trim()),
+    confidence: event.confidence,
+    ...extra,
+  };
 }
 
 function isValidDate(value: string | null | undefined): boolean {
@@ -221,9 +242,21 @@ export default async function notificationTask(payload: HeadlessPayload) {
       return;
     }
 
-    devLog('NotificationTask', 'received', { app: notification.app, title: notification.title }).catch(() => {});
+    devLog('NotificationTask', 'received', {
+      app: notification.app,
+      title: notification.title,
+      textLength: notification.text?.length ?? 0,
+    }).catch(() => {});
 
     const appSettings = await getAppSettings();
+    const textLength = notification.text?.length ?? 0;
+    const settingsDetail = {
+      autoSync: appSettings.autoSync,
+      autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
+      autoSyncAllowConflicts: appSettings.autoSyncAllowConflicts,
+      requiredTime: appSettings.requiredEventFields.time,
+      requiredLocation: appSettings.requiredEventFields.location,
+    };
     console.log('[NotificationTask] settings:', {
       autoSync: appSettings.autoSync,
       autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
@@ -270,31 +303,31 @@ export default async function notificationTask(payload: HeadlessPayload) {
     const extracted = await extractScheduleFromText(notification.text, apiKey);
 
     if (!extracted) {
-      logDecision('skip:no-schedule-found');
+      logDecision('skip:no-schedule-found', { sourceApp: notification.app, textLength });
       return;
     }
+    const extractedDetail = scheduleLogDetail(notification.app, textLength, extracted, settingsDetail);
+    logDecision('gemini:extracted', extractedDetail);
     if (extracted.confidence < 0.6) {
-      logDecision('skip:confidence-too-low', { confidence: extracted.confidence });
+      logDecision('skip:confidence-too-low', extractedDetail);
       return;
     }
 
     if (!isValidDate(extracted.date)) {
-      logDecision('skip:missing-date');
+      logDecision('skip:missing-date', extractedDetail);
       return;
     }
 
     const missingRequiredFields = getMissingRequiredFields(extracted, appSettings.requiredEventFields);
     if (missingRequiredFields.length > 0) {
-      logDecision('skip:missing-required-fields', { missingRequiredFields });
+      logDecision('skip:missing-required-fields', { ...extractedDetail, missingRequiredFields });
       return;
     }
 
     // [2단계] 같은 제목+날짜+시간 일정이 이미 존재하면 스킵
     if (await isDuplicateSchedule(extracted.title, extracted.date, extracted.time)) {
       logDecision('skip:duplicate-schedule', {
-        title: extracted.title,
-        date: extracted.date,
-        time: extracted.time,
+        ...extractedDetail,
       });
       return;
     }
@@ -333,11 +366,11 @@ export default async function notificationTask(payload: HeadlessPayload) {
           },
           trigger: { channelId: 'schedule-detected' } as any,
         });
-        logDecision('fallback:missing-time');
+        logDecision('fallback:missing-time', extractedDetail);
         return;
       }
 
-      if (extracted.confidence < appSettings.autoSyncMinConfidence) {
+      if (extracted.confidence < 0.75) {
         await saveScheduleToStorage({
           ...baseSchedule,
           processingNote: `자동등록 보류: 신뢰도 ${Math.round(extracted.confidence * 100)}%`,
@@ -351,7 +384,7 @@ export default async function notificationTask(payload: HeadlessPayload) {
           },
           trigger: { channelId: 'schedule-detected' } as any,
         });
-        logDecision('fallback:low-confidence', { confidence: extracted.confidence });
+        logDecision('fallback:low-confidence', extractedDetail);
         return;
       }
 
@@ -374,12 +407,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
                 },
                 trigger: { channelId: 'schedule-detected' } as any,
               });
-              logDecision('fallback:calendar-conflict', { conflicts: conflicts.length });
+              logDecision('fallback:calendar-conflict', { ...extractedDetail, conflicts: conflicts.length });
               return;
             }
           }
 
-          logDecision('auto-sync:start');
+          logDecision('auto-sync:start', extractedDetail);
           const calendarEventId = await createCalendarEvent(baseSchedule, token, appSettings.reminderMinutes);
           await saveScheduleToStorage({
             ...baseSchedule,
@@ -397,16 +430,20 @@ export default async function notificationTask(payload: HeadlessPayload) {
             },
             trigger: { channelId: 'schedule-detected' } as any,
           });
-          logDecision('auto-sync:success', { title: extracted.title, calendarEventId });
+          logDecision('auto-sync:success', { ...extractedDetail, calendarEventId });
           return;
         } catch (err) {
           console.error('[NotificationTask] autoSync failed, falling back to pending:', err);
+          logDecision('fallback:calendar-error', {
+            ...extractedDetail,
+            error: err instanceof Error ? err.message : String(err),
+          });
           baseSchedule.processingNote =
             err instanceof Error ? `자동등록 실패: ${err.message}` : '자동등록 실패';
           baseSchedule.processingReason = 'fallback_calendar_error';
         }
       } else {
-        logDecision('fallback:no-token');
+        logDecision('fallback:no-token', extractedDetail);
         baseSchedule.processingNote = '자동등록 보류: Google 로그인이 필요합니다';
         baseSchedule.processingReason = 'fallback_no_token';
       }
@@ -429,7 +466,11 @@ export default async function notificationTask(payload: HeadlessPayload) {
     });
     logDecision(
       `pending:saved:${baseSchedule.processingReason as ScheduleProcessingReason}`,
-      { title: extracted.title }
+      scheduleLogDetail(notification.app, textLength, baseSchedule, {
+        processingReason: baseSchedule.processingReason,
+        hasProcessingNote: Boolean(baseSchedule.processingNote),
+        autoSync: appSettings.autoSync,
+      })
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

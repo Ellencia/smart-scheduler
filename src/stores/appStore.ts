@@ -42,7 +42,6 @@ interface AppState {
   sourceSettings: SourceSettings;
   requiredEventFields: RequiredEventFields;
   autoSync: boolean;
-  autoSyncMinConfidence: number;
   autoSyncAllowConflicts: boolean;
   ignoredKeywords: string[];
   completeOnboarding: () => void;
@@ -52,7 +51,6 @@ interface AppState {
   setSourceEnabled: (source: NotificationSource, enabled: boolean) => void;
   setRequiredEventField: (field: keyof RequiredEventFields, required: boolean) => void;
   setAutoSync: (v: boolean) => void;
-  setAutoSyncMinConfidence: (v: number) => void;
   setAutoSyncAllowConflicts: (v: boolean) => void;
   setIgnoredKeywords: (v: string[]) => void;
 }
@@ -66,7 +64,6 @@ export const useAppStore = create<AppState>()(
       sourceSettings: DEFAULT_SOURCE_SETTINGS,
       requiredEventFields: DEFAULT_REQUIRED_EVENT_FIELDS,
       autoSync: false,
-      autoSyncMinConfidence: 0.75,
       autoSyncAllowConflicts: false,
       ignoredKeywords: [],
       completeOnboarding: () => set({ onboardingCompleted: true }),
@@ -82,7 +79,6 @@ export const useAppStore = create<AppState>()(
           requiredEventFields: { ...state.requiredEventFields, [field]: required },
         })),
       setAutoSync: (v) => set({ autoSync: v }),
-      setAutoSyncMinConfidence: (v) => set({ autoSyncMinConfidence: v }),
       setAutoSyncAllowConflicts: (v) => set({ autoSyncAllowConflicts: v }),
       setIgnoredKeywords: (v) => set({ ignoredKeywords: v }),
     }),

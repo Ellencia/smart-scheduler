@@ -1,5 +1,8 @@
 // "2026-04-29" + "19:00" → "오늘 19:00" / "내일 19:00" / "4/30 19:00"
 export function formatScheduleDateTime(date: string, time: string): string {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return '날짜 정보 없음';
+  if (!time || !/^\d{2}:\d{2}$/.test(time)) return `${date.slice(5).replace('-', '/')} 시간 미정`;
+
   const target = new Date(`${date}T${time}:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);

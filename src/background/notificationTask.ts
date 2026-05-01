@@ -215,12 +215,13 @@ export default async function notificationTask(payload: HeadlessPayload) {
         : payload.notification;
 
     console.log('[NotificationTask] received:', notification.app, '|', notification.title);
-    devLog('NotificationTask', 'received', { app: notification.app, title: notification.title }).catch(() => {});
 
     if (!TARGET_APPS.has(notification.app)) {
       logDecision('skip:not-target-app', { app: notification.app });
       return;
     }
+
+    devLog('NotificationTask', 'received', { app: notification.app, title: notification.title }).catch(() => {});
 
     const appSettings = await getAppSettings();
     console.log('[NotificationTask] settings:', {

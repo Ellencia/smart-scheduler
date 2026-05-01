@@ -55,9 +55,14 @@ export function DevLogViewer() {
           <Text style={styles.headerSub}>최근 {logs.length > 0 ? `${logs.length}개` : '—'}</Text>
         </View>
         {expanded && (
-          <TouchableOpacity onPress={handleClear} hitSlop={8} style={styles.clearBtn}>
-            <Text style={styles.clearText}>지우기</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity onPress={load} hitSlop={8} style={styles.clearBtn}>
+              <Ionicons name="refresh" size={13} color={colors.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleClear} hitSlop={8} style={styles.clearBtn}>
+              <Text style={styles.clearText}>지우기</Text>
+            </TouchableOpacity>
+          </>
         )}
         <Ionicons
           name={expanded ? 'chevron-up' : 'chevron-down'}

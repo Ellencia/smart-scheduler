@@ -52,3 +52,15 @@ export async function clearDevLogs(): Promise<void> {
     // ignore
   }
 }
+
+export function formatDevLogs(entries: LogEntry[]): string {
+  return entries
+    .map((entry) => {
+      const time = new Date(entry.ts).toISOString();
+      const detail = entry.detail && Object.keys(entry.detail).length > 0
+        ? ` ${JSON.stringify(entry.detail)}`
+        : '';
+      return `[${time}] ${entry.level.toUpperCase()} ${entry.tag}: ${entry.msg}${detail}`;
+    })
+    .join('\n');
+}

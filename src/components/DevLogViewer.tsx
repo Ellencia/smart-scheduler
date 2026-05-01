@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useColors } from '../hooks/useColors';
 import { RADIUS } from '../theme/colors';
-import { getDevLogs, clearDevLogs, type LogEntry } from '../utils/devLog';
+import { getDevLogs, clearDevLogs, formatDevLogs, type LogEntry } from '../utils/devLog';
 import type { AppColors } from '../theme/colors';
 
 function formatTime(ts: number): string {
@@ -22,12 +23,27 @@ function levelColor(level: LogEntry['level'], c: AppColors): string {
   return c.success;
 }
 
+type LogFilter = 'all' | 'warn' | 'error';
+
+const FILTERS: { value: LogFilter; label: string }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'warn', label: '경고' },
+  { value: 'error', label: '에러' },
+];
+
 export function DevLogViewer() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [expanded, setExpanded] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [filter, setFilter] = useState<LogFilter>('all');
+
+  const filteredLogs = useMemo(
+    () => logs.filter((entry) => filter === 'all' || entry.level === filter),
+    [logs, filter]
+  );
 
   const load = async () => {
     setLoading(true);
@@ -40,9 +56,28 @@ export function DevLogViewer() {
     setLogs([]);
   };
 
+  const handleCopy = async () => {
+    const latest = await getDevLogs();
+    setLogs(latest);
+    if (latest.length === 0) {
+      Alert.alert('복사할 로그 없음', '기록된 로그가 없습니다.');
+      return;
+    }
+    await Clipboard.setStringAsync(formatDevLogs(latest));
+    Alert.alert('복사 완료', `${latest.length}개의 로그를 클립보드에 복사했습니다.`);
+  };
+
   useEffect(() => {
     if (expanded) load();
   }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded || !autoRefresh) return undefined;
+    const timer = setInterval(() => {
+      getDevLogs().then(setLogs).catch(() => {});
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [expanded, autoRefresh]);
 
   return (
     <View style={styles.wrapper}>
@@ -59,6 +94,20 @@ export function DevLogViewer() {
             <TouchableOpacity onPress={load} hitSlop={8} style={styles.clearBtn}>
               <Ionicons name="refresh" size={13} color={colors.accent} />
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setAutoRefresh((v) => !v)}
+              hitSlop={8}
+              style={[styles.clearBtn, autoRefresh && styles.activeBtn]}
+            >
+              <Ionicons
+                name="sync"
+                size={13}
+                color={autoRefresh ? colors.accent : colors.faint}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCopy} hitSlop={8} style={styles.clearBtn}>
+              <Ionicons name="copy-outline" size={13} color={colors.accent} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={handleClear} hitSlop={8} style={styles.clearBtn}>
               <Text style={styles.clearText}>지우기</Text>
             </TouchableOpacity>
@@ -73,13 +122,30 @@ export function DevLogViewer() {
 
       {expanded && (
         <View style={styles.logBox}>
+          <View style={styles.filterRow}>
+            {FILTERS.map((item) => {
+              const active = filter === item.value;
+              return (
+                <TouchableOpacity
+                  key={item.value}
+                  style={[styles.filterBtn, active && styles.filterBtnActive]}
+                  onPress={() => setFilter(item.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
           {loading ? (
             <ActivityIndicator size="small" color={colors.accent} style={{ padding: 16 }} />
-          ) : logs.length === 0 ? (
+          ) : filteredLogs.length === 0 ? (
             <Text style={styles.emptyText}>기록된 로그가 없습니다</Text>
           ) : (
             <ScrollView style={styles.scroll} nestedScrollEnabled>
-              {logs.map((entry) => (
+              {filteredLogs.map((entry) => (
                 <View key={entry.id} style={styles.row}>
                   <View style={[styles.dot, { backgroundColor: levelColor(entry.level, colors) }]} />
                   <View style={styles.rowBody}>
@@ -136,12 +202,30 @@ function makeStyles(c: AppColors) {
       paddingVertical: 4,
       borderRadius: RADIUS.sm,
     },
+    activeBtn: { backgroundColor: c.accentDim },
     clearText: { fontSize: 12, color: c.faint },
 
     logBox: {
       borderTopWidth: 0.5,
       borderTopColor: c.border,
     },
+    filterRow: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderBottomWidth: 0.5,
+      borderBottomColor: c.border,
+    },
+    filterBtn: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: RADIUS.sm,
+      backgroundColor: c.surfaceAlt,
+    },
+    filterBtnActive: { backgroundColor: c.accentDim },
+    filterText: { fontSize: 12, color: c.muted, fontWeight: '600' },
+    filterTextActive: { color: c.accent },
     scroll: { maxHeight: 320 },
     emptyText: {
       fontSize: 13,

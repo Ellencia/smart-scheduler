@@ -35,22 +35,51 @@ interface RawNotification {
   time: string;
 }
 
-// 일정 관련 키워드 — 하나라도 포함되어야 Gemini 호출
-// 시간/날짜/위치 단서가 전혀 없는 일반 대화는 사전 차단
-const SCHEDULE_KEYWORDS = [
-  // 시간
-  '시', '분', '오전', '오후', '아침', '점심', '저녁', '밤', '새벽',
-  // 날짜
+// 날짜/시간 단서 — "언제"에 해당하는 키워드
+const TIME_KEYWORDS = [
+  '오전', '오후', '아침', '점심', '저녁', '밤', '새벽',
   '오늘', '내일', '모레', '글피', '주말', '평일',
   '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
-  '월', '일', '주', '다음주', '이번주', '다음달', '이번달',
-  // 일정 동사/명사
-  '만나', '약속', '예약', '미팅', '회의', '식사', '회식', '수업',
-  '강의', '시험', '면접', '병원', '결혼', '생일', '파티', '모임',
+  '다음주', '이번주', '다음달', '이번달',
 ];
 
+// 일정 행동/명사 단서 — "무엇을"에 해당하는 키워드
+// 단독으로는 오탐 가능(파티션, 수업료, 회의감 등) → TIME_KEYWORDS 와 조합 필수
+// '보자', '만나자' 는 명시적 만남 제안 동사 — 재조율 문장("취소됐는데 다음주에 다시 보자") 보존
+const EVENT_KEYWORDS = [
+  '만나', '만나자', '보자', '약속', '예약', '미팅', '회의', '식사', '회식', '수업',
+  '강의', '시험', '면접', '병원', '결혼', '생일', '파티', '모임',
+  '시간 돼', '괜찮', '볼래', '얘기하자',
+];
+
+// 취소/불참이 확실한 패턴
+// 안/못 단독은 제외 (안국역, 안녕 등 오탐 위험)
+const CANCELLATION_PATTERNS = [
+  '취소', '불참', '못가', '못 가', '안가', '안 가',
+  '못 갈', '안 갈', '못갈', '안갈',
+  '어렵겠', '힘들겠', '미룰', '연기',
+];
+
+// 취소 패턴 + 재조율 단서가 함께 있으면 Gemini로 보냄
+// "취소됐는데 다시 보자" / "취소하고 대신 잡자" 등 보존
+// 다음주/다음 주는 제외 — "다음주 미팅 취소됐어" 같은 케이스가 오통과됨
+const RESCHEDULE_PATTERNS = [
+  '다시', '대신', '새로', '변경', '옮겨', '나중에', '잡자', '보자',
+];
+
+// TIME + EVENT 둘 다 있어야 Gemini 호출
+// 단일 키워드 오탐 방지: "오늘 날씨", "병원 드라마", "회의감" 등 차단
 function hasScheduleKeyword(text: string): boolean {
-  return SCHEDULE_KEYWORDS.some((kw) => text.includes(kw));
+  const hasTime = TIME_KEYWORDS.some((kw) => text.includes(kw));
+  const hasEvent = EVENT_KEYWORDS.some((kw) => text.includes(kw));
+  return hasTime && hasEvent;
+}
+
+function isClearCancellation(text: string): boolean {
+  const hasCancellation = CANCELLATION_PATTERNS.some((p) => text.includes(p));
+  if (!hasCancellation) return false;
+  const hasReschedule = RESCHEDULE_PATTERNS.some((p) => text.includes(p));
+  return !hasReschedule;
 }
 
 // HeadlessJS 컨텍스트에서는 Zustand store가 hydrate되지 않으므로
@@ -252,14 +281,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
     const textLength = notification.text?.length ?? 0;
     const settingsDetail = {
       autoSync: appSettings.autoSync,
-      autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
       autoSyncAllowConflicts: appSettings.autoSyncAllowConflicts,
       requiredTime: appSettings.requiredEventFields.time,
       requiredLocation: appSettings.requiredEventFields.location,
     };
     console.log('[NotificationTask] settings:', {
       autoSync: appSettings.autoSync,
-      autoSyncMinConfidence: appSettings.autoSyncMinConfidence,
       autoSyncAllowConflicts: appSettings.autoSyncAllowConflicts,
       requiredEventFields: appSettings.requiredEventFields,
       ignoredKeywords: appSettings.ignoredKeywords.length,
@@ -282,6 +309,12 @@ export default async function notificationTask(payload: HeadlessPayload) {
     // 사전 키워드 필터링 — Gemini 호출 자체를 줄여서 429 회피
     if (!hasScheduleKeyword(notification.text)) {
       logDecision('skip:no-schedule-keyword');
+      return;
+    }
+
+    // 취소/불참이 확실하고 재조율 단서가 없으면 Gemini 불필요
+    if (isClearCancellation(notification.text)) {
+      logDecision('skip:clear-cancellation');
       return;
     }
 
